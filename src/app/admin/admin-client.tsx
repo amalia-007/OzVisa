@@ -155,7 +155,7 @@ export function AdminClient({ locale }: AdminClientProps) {
           <StatCard
             icon={<DollarSign className="h-5 w-5 text-green-600" />}
             label={isFrench ? "Revenus totaux" : "Total revenue"}
-            value={`€${stats.totalRevenue}`}
+            value={`A$${stats.totalRevenue}`}
             bg="bg-green-50"
           />
           <StatCard

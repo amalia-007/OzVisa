@@ -13,7 +13,7 @@
       "titleHighlight": "en quelques minutes",
       "subtitle": "Téléchargez votre fiche de paie ou votre lettre d'employeur. L'IA extrait toutes les informations nécessaires et vous guide étape par étape pour compléter votre demande sur le site du gouvernement australien.",
       "cta": "Analyser mes documents",
-      "ctaSub": "Paiement unique · 29€ · Résultats immédiats"
+      "ctaSub": "Paiement unique · 55 AUD · Résultats immédiats"
     },
     "howItWorks": {
       "title": "Comment ça marche",
@@ -24,7 +24,7 @@
       },
       "step2": {
         "title": "Payez en toute sécurité",
-        "description": "Paiement unique de 29€ via Stripe. Vos données bancaires sont protégées. Aucun abonnement."
+        "description": "Paiement unique de 55 AUD via Stripe. Vos données bancaires sont protégées. Aucun abonnement."
       },
       "step3": {
         "title": "Recevez votre guide personnalisé",
@@ -33,7 +33,7 @@
     },
     "pricing": {
       "title": "Tarif unique et transparent",
-      "price": "29€",
+      "price": "55 AUD",
       "period": "paiement unique",
       "features": [
         "Analyse IA de vos documents",
@@ -92,7 +92,7 @@
       "417": "WHV 417 (Working Holiday)",
       "462": "WHV 462 (Work and Holiday)"
     },
-    "cta": "Payer 29€ et analyser",
+    "cta": "Payer 55 AUD et analyser",
     "processing": "Redirection vers le paiement...",
     "errors": {
       "noPayslip": "Veuillez télécharger votre fiche de paie.",

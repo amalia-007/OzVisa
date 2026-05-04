@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
 
 interface NavbarProps {
   locale: string;
@@ -11,11 +10,9 @@ interface NavbarProps {
 
 export function Navbar({ locale }: NavbarProps) {
   const t = useTranslations("nav");
-  const [isChangingLang, setIsChangingLang] = useState(false);
 
-  async function toggleLanguage() {
-    setIsChangingLang(true);
-    const newLocale = locale === "fr" ? "en" : "fr";
+  function switchLanguage(newLocale: string) {
+    if (newLocale === locale) return;
     document.cookie = `locale=${newLocale}; path=/; max-age=${60 * 60 * 24 * 365}`;
     window.location.reload();
   }
@@ -35,16 +32,30 @@ export function Navbar({ locale }: NavbarProps) {
                 {t("upload")}
               </Button>
             </Link>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={toggleLanguage}
-              disabled={isChangingLang}
-              className="gap-1.5"
-            >
-              <span className="text-base">{locale === "fr" ? "🇫🇷" : "🇬🇧"}</span>
-              <span>{locale === "fr" ? "EN" : "FR"}</span>
-            </Button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => switchLanguage("fr")}
+                className={`text-xl px-2 py-1 rounded-md transition-colors ${
+                  locale === "fr"
+                    ? "bg-blue-100 ring-2 ring-blue-500"
+                    : "hover:bg-gray-100 opacity-50 hover:opacity-80"
+                }`}
+                title="Français"
+              >
+                🇫🇷
+              </button>
+              <button
+                onClick={() => switchLanguage("en")}
+                className={`text-xl px-2 py-1 rounded-md transition-colors ${
+                  locale === "en"
+                    ? "bg-blue-100 ring-2 ring-blue-500"
+                    : "hover:bg-gray-100 opacity-50 hover:opacity-80"
+                }`}
+                title="English"
+              >
+                🇬🇧
+              </button>
+            </div>
           </div>
         </div>
       </div>

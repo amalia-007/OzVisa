@@ -13,7 +13,7 @@
       "titleHighlight": "in minutes",
       "subtitle": "Upload your payslip or employer letter. The AI extracts all necessary information and guides you step by step to complete your application on the Australian government website.",
       "cta": "Analyze my documents",
-      "ctaSub": "One-time payment · €29 · Instant results"
+      "ctaSub": "One-time payment · 55 AUD · Instant results"
     },
     "howItWorks": {
       "title": "How it works",
@@ -24,7 +24,7 @@
       },
       "step2": {
         "title": "Pay securely",
-        "description": "One-time payment of €29 via Stripe. Your payment data is protected. No subscription."
+        "description": "One-time payment of 55 AUD via Stripe. Your payment data is protected. No subscription."
       },
       "step3": {
         "title": "Receive your personalized guide",
@@ -33,7 +33,7 @@
     },
     "pricing": {
       "title": "Single transparent price",
-      "price": "€29",
+      "price": "55 AUD",
       "period": "one-time payment",
       "features": [
         "AI analysis of your documents",
@@ -92,7 +92,7 @@
       "417": "WHV 417 (Working Holiday)",
       "462": "WHV 462 (Work and Holiday)"
     },
-    "cta": "Pay €29 and analyze",
+    "cta": "Pay 55 AUD and analyze",
     "processing": "Redirecting to payment...",
     "errors": {
       "noPayslip": "Please upload your payslip.",

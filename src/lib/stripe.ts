@@ -26,5 +26,5 @@ export const stripe = {
   },
 };
 
-export const PRICE_IN_CENTS = 2900; // 29€
-export const CURRENCY = "eur";
+export const PRICE_IN_CENTS = 5500; // 55 AUD
+export const CURRENCY = "aud";

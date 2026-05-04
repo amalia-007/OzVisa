@@ -300,8 +300,8 @@ export function UploadForm({ locale }: UploadFormProps) {
         <CreditCard className="h-5 w-5 flex-shrink-0 mt-0.5 text-gray-400" />
         <p>
           {locale === "fr"
-            ? "Paiement sécurisé de 29€ via Stripe. Vos documents sont traités en mémoire uniquement et ne sont jamais stockés."
-            : "Secure €29 payment via Stripe. Your documents are processed in memory only and are never stored."}
+            ? "Paiement sécurisé de 55 AUD via Stripe. Vos documents sont traités en mémoire uniquement et ne sont jamais stockés."
+            : "Secure 55 AUD payment via Stripe. Your documents are processed in memory only and are never stored."}
         </p>
       </div>
 

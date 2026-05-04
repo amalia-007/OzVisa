@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
   }
 
   const totalRevenue = analyses?.filter((a) => a.stripe_status === "completed" || a.stripe_status === "paid")
-    .length * 29 || 0;
+    .length * 55 || 0;
 
   const totalAnalyses = analyses?.length || 0;
   const paidAnalyses = analyses?.filter((a) => ["completed", "paid"].includes(a.stripe_status)).length || 0;
