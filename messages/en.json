@@ -1,0 +1,213 @@
+{
+  "nav": {
+    "home": "Home",
+    "upload": "Analyze my documents",
+    "language": "Language",
+    "fr": "Français",
+    "en": "English"
+  },
+  "landing": {
+    "hero": {
+      "badge": "WHV 417 & 462",
+      "title": "Renew your Working Holiday Visa",
+      "titleHighlight": "in minutes",
+      "subtitle": "Upload your payslip or employer letter. The AI extracts all necessary information and guides you step by step to complete your application on the Australian government website.",
+      "cta": "Analyze my documents",
+      "ctaSub": "One-time payment · €29 · Instant results"
+    },
+    "howItWorks": {
+      "title": "How it works",
+      "subtitle": "Simple, fast and secure. Your visa in 3 steps.",
+      "step1": {
+        "title": "Upload your documents",
+        "description": "Payslip and/or employer letter. Accepted formats: PDF, JPG, PNG, WEBP (max 10 MB)."
+      },
+      "step2": {
+        "title": "Pay securely",
+        "description": "One-time payment of €29 via Stripe. Your payment data is protected. No subscription."
+      },
+      "step3": {
+        "title": "Receive your personalized guide",
+        "description": "The AI extracts all your information and guides you field by field to complete your visa application."
+      }
+    },
+    "pricing": {
+      "title": "Single transparent price",
+      "price": "€29",
+      "period": "one-time payment",
+      "features": [
+        "AI analysis of your documents",
+        "Automatic extraction of all data",
+        "2nd WHV eligibility check",
+        "Personalized step-by-step guide",
+        "Copy-paste buttons for each field",
+        "Downloadable PDF",
+        "Results sent by email"
+      ],
+      "cta": "Get started now",
+      "guarantee": "Secure payment via Stripe · No refunds for completed analyses"
+    },
+    "trust": {
+      "secure": "Secure payment",
+      "secureDesc": "Stripe · SSL encryption",
+      "noStorage": "Documents not stored",
+      "noStorageDesc": "Processed in memory only",
+      "official": "Official sources",
+      "officialDesc": "immi.homeaffairs.gov.au"
+    },
+    "faq": {
+      "title": "Frequently asked questions",
+      "q1": "Which documents can I upload?",
+      "a1": "You can upload your payslip and/or employer letter. PDF, JPG, PNG and WEBP formats are accepted up to 10 MB each.",
+      "q2": "Are my documents stored?",
+      "a2": "No. Your files are processed in memory only and are never saved on our servers. Only the analysis result (extracted text) is retained.",
+      "q3": "Can I get a refund?",
+      "a3": "Completed analyses are non-refundable. If the analysis failed for a technical reason, contact us.",
+      "q4": "How long to receive results?",
+      "a4": "The analysis usually takes less than 60 seconds after payment confirmation.",
+      "q5": "Is the guide official?",
+      "a5": "The guide is based on official information from immi.homeaffairs.gov.au. We provide direct links to official Australian government forms."
+    }
+  },
+  "upload": {
+    "title": "Analyze my documents",
+    "subtitle": "Upload your payslip and/or employer letter to get started.",
+    "payslip": {
+      "label": "Payslip (required)",
+      "hint": "Drag & drop or click to select",
+      "formats": "PDF, JPG, PNG, WEBP · Max 10 MB"
+    },
+    "employerLetter": {
+      "label": "Employer letter (optional)",
+      "hint": "Drag & drop or click to select",
+      "formats": "PDF, JPG, PNG, WEBP · Max 10 MB"
+    },
+    "email": {
+      "label": "Your email",
+      "placeholder": "example@email.com",
+      "hint": "Results will be sent to this address"
+    },
+    "visaType": {
+      "label": "Visa type",
+      "417": "WHV 417 (Working Holiday)",
+      "462": "WHV 462 (Work and Holiday)"
+    },
+    "cta": "Pay €29 and analyze",
+    "processing": "Redirecting to payment...",
+    "errors": {
+      "noPayslip": "Please upload your payslip.",
+      "invalidType": "Format not accepted. Use PDF, JPG, PNG or WEBP.",
+      "tooLarge": "File too large. Maximum 10 MB.",
+      "noEmail": "Please enter your email address.",
+      "invalidEmail": "Invalid email address."
+    }
+  },
+  "processing": {
+    "title": "Analysis in progress...",
+    "subtitle": "Your payment has been confirmed. The AI is analyzing your documents.",
+    "steps": {
+      "payment": "Payment confirmed",
+      "extracting": "Extracting data",
+      "analyzing": "Analyzing eligibility",
+      "generating": "Generating guide"
+    },
+    "redirect": "Redirecting to your results..."
+  },
+  "results": {
+    "title": "Your results",
+    "subtitle": "Here is all the information extracted from your documents.",
+    "extractedData": {
+      "title": "Extracted data",
+      "confidence": "Confidence",
+      "copy": "Copy",
+      "copied": "Copied!",
+      "missing": "Not found"
+    },
+    "eligibility": {
+      "title": "2nd WHV Eligibility",
+      "eligible": "Your work appears eligible as 'specified work' for a 2nd WHV!",
+      "notEligible": "Your work does not appear eligible as 'specified work' for a 2nd WHV.",
+      "uncertain": "Unable to determine eligibility with available information.",
+      "learnMore": "Learn more about 'specified work'"
+    },
+    "guide": {
+      "title": "Step-by-step guide",
+      "step1": {
+        "title": "Access the official website",
+        "description": "Go to the official Australian Government website for your visa type:"
+      },
+      "step2": {
+        "title": "Log in to ImmiAccount",
+        "description": "Create an account or log in to your ImmiAccount:"
+      },
+      "step3": {
+        "title": "Create a new application",
+        "description": "Click 'New application' → Select 'Working Holiday' → Choose the subclass"
+      },
+      "step4": {
+        "title": "Fill in the form",
+        "description": "Use the extracted data above to fill in each section. Here is the mapping:"
+      },
+      "step5": {
+        "title": "Attach documents",
+        "description": "Upload your original documents: payslip, employer letter, passport."
+      },
+      "step6": {
+        "title": "Submit the application",
+        "description": "Review all information and submit your application. Keep the reference number."
+      }
+    },
+    "download": {
+      "pdf": "Download PDF",
+      "generating": "Generating PDF..."
+    },
+    "email": {
+      "sent": "Results sent to"
+    },
+    "fields": {
+      "fullName": "Full name",
+      "employerName": "Employer name",
+      "employerAbn": "Employer ABN",
+      "jobTitle": "Job title",
+      "employmentType": "Employment type",
+      "hoursPerWeek": "Hours per week",
+      "totalHours": "Total hours",
+      "payPeriod": "Pay period",
+      "grossIncome": "Gross income per period",
+      "startDate": "Start date",
+      "postcode": "Work location postcode",
+      "state": "Work location state",
+      "industry": "Industry / sector",
+      "specifiedWork": "Specified work (regional work)"
+    }
+  },
+  "admin": {
+    "title": "Admin Dashboard",
+    "login": {
+      "title": "Admin Access",
+      "password": "Password",
+      "submit": "Login",
+      "error": "Incorrect password"
+    },
+    "stats": {
+      "totalRevenue": "Total revenue",
+      "totalAnalyses": "Total analyses",
+      "conversionRate": "Conversion rate",
+      "paidAnalyses": "Paid analyses"
+    },
+    "table": {
+      "email": "Email",
+      "date": "Date",
+      "visaType": "Visa type",
+      "status": "Status",
+      "actions": "Actions",
+      "view": "View"
+    }
+  },
+  "common": {
+    "loading": "Loading...",
+    "error": "An error occurred",
+    "back": "Back",
+    "close": "Close"
+  }
+}

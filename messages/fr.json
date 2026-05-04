@@ -1,0 +1,213 @@
+{
+  "nav": {
+    "home": "Accueil",
+    "upload": "Analyser mes documents",
+    "language": "Langue",
+    "fr": "Français",
+    "en": "English"
+  },
+  "landing": {
+    "hero": {
+      "badge": "WHV 417 & 462",
+      "title": "Renouvelez votre Working Holiday Visa",
+      "titleHighlight": "en quelques minutes",
+      "subtitle": "Téléchargez votre fiche de paie ou votre lettre d'employeur. L'IA extrait toutes les informations nécessaires et vous guide étape par étape pour compléter votre demande sur le site du gouvernement australien.",
+      "cta": "Analyser mes documents",
+      "ctaSub": "Paiement unique · 29€ · Résultats immédiats"
+    },
+    "howItWorks": {
+      "title": "Comment ça marche",
+      "subtitle": "Simple, rapide et sécurisé. Votre visa en 3 étapes.",
+      "step1": {
+        "title": "Téléchargez vos documents",
+        "description": "Fiche de paie et/ou lettre d'employeur. Formats acceptés : PDF, JPG, PNG, WEBP (max 10 Mo)."
+      },
+      "step2": {
+        "title": "Payez en toute sécurité",
+        "description": "Paiement unique de 29€ via Stripe. Vos données bancaires sont protégées. Aucun abonnement."
+      },
+      "step3": {
+        "title": "Recevez votre guide personnalisé",
+        "description": "L'IA extrait toutes vos informations et vous guide champ par champ pour remplir votre demande de visa."
+      }
+    },
+    "pricing": {
+      "title": "Tarif unique et transparent",
+      "price": "29€",
+      "period": "paiement unique",
+      "features": [
+        "Analyse IA de vos documents",
+        "Extraction automatique de toutes les données",
+        "Vérification de l'éligibilité au 2ème WHV",
+        "Guide étape par étape personnalisé",
+        "Boutons copier-coller pour chaque champ",
+        "PDF téléchargeable",
+        "Résultats envoyés par email"
+      ],
+      "cta": "Commencer maintenant",
+      "guarantee": "Paiement sécurisé via Stripe · Pas de remboursement pour les analyses complétées"
+    },
+    "trust": {
+      "secure": "Paiement sécurisé",
+      "secureDesc": "Stripe · Chiffrement SSL",
+      "noStorage": "Documents non stockés",
+      "noStorageDesc": "Traitement en mémoire uniquement",
+      "official": "Sources officielles",
+      "officialDesc": "immi.homeaffairs.gov.au"
+    },
+    "faq": {
+      "title": "Questions fréquentes",
+      "q1": "Quels documents puis-je télécharger ?",
+      "a1": "Vous pouvez télécharger votre fiche de paie (payslip) et/ou votre lettre d'employeur. Les formats PDF, JPG, PNG et WEBP sont acceptés jusqu'à 10 Mo chacun.",
+      "q2": "Mes documents sont-ils stockés ?",
+      "a2": "Non. Vos fichiers sont traités uniquement en mémoire et ne sont jamais enregistrés sur nos serveurs. Seul le résultat de l'analyse (texte extrait) est conservé.",
+      "q3": "Puis-je obtenir un remboursement ?",
+      "a3": "Les analyses complétées ne sont pas remboursables. Si l'analyse a échoué pour une raison technique, contactez-nous.",
+      "q4": "Combien de temps pour recevoir les résultats ?",
+      "a4": "L'analyse prend généralement moins de 60 secondes après la confirmation du paiement.",
+      "q5": "Le guide est-il officiel ?",
+      "a5": "Le guide est basé sur les informations officielles du site immi.homeaffairs.gov.au. Nous vous donnons les liens directs vers les formulaires officiels du gouvernement australien."
+    }
+  },
+  "upload": {
+    "title": "Analyser mes documents",
+    "subtitle": "Téléchargez votre fiche de paie et/ou lettre d'employeur pour commencer.",
+    "payslip": {
+      "label": "Fiche de paie (obligatoire)",
+      "hint": "Glissez-déposez ou cliquez pour sélectionner",
+      "formats": "PDF, JPG, PNG, WEBP · Max 10 Mo"
+    },
+    "employerLetter": {
+      "label": "Lettre d'employeur (optionnel)",
+      "hint": "Glissez-déposez ou cliquez pour sélectionner",
+      "formats": "PDF, JPG, PNG, WEBP · Max 10 Mo"
+    },
+    "email": {
+      "label": "Votre email",
+      "placeholder": "exemple@email.com",
+      "hint": "Les résultats seront envoyés à cette adresse"
+    },
+    "visaType": {
+      "label": "Type de visa",
+      "417": "WHV 417 (Working Holiday)",
+      "462": "WHV 462 (Work and Holiday)"
+    },
+    "cta": "Payer 29€ et analyser",
+    "processing": "Redirection vers le paiement...",
+    "errors": {
+      "noPayslip": "Veuillez télécharger votre fiche de paie.",
+      "invalidType": "Format non accepté. Utilisez PDF, JPG, PNG ou WEBP.",
+      "tooLarge": "Fichier trop volumineux. Maximum 10 Mo.",
+      "noEmail": "Veuillez entrer votre adresse email.",
+      "invalidEmail": "Adresse email invalide."
+    }
+  },
+  "processing": {
+    "title": "Analyse en cours...",
+    "subtitle": "Votre paiement a été confirmé. L'IA analyse vos documents.",
+    "steps": {
+      "payment": "Paiement confirmé",
+      "extracting": "Extraction des données",
+      "analyzing": "Analyse de l'éligibilité",
+      "generating": "Génération du guide"
+    },
+    "redirect": "Redirection vers vos résultats..."
+  },
+  "results": {
+    "title": "Vos résultats",
+    "subtitle": "Voici toutes les informations extraites de vos documents.",
+    "extractedData": {
+      "title": "Données extraites",
+      "confidence": "Confiance",
+      "copy": "Copier",
+      "copied": "Copié !",
+      "missing": "Non trouvé"
+    },
+    "eligibility": {
+      "title": "Éligibilité au 2ème WHV",
+      "eligible": "Votre travail semble éligible comme « specified work » pour un 2ème WHV !",
+      "notEligible": "Votre travail ne semble pas éligible comme « specified work » pour un 2ème WHV.",
+      "uncertain": "Impossible de déterminer l'éligibilité avec les informations disponibles.",
+      "learnMore": "En savoir plus sur le « specified work »"
+    },
+    "guide": {
+      "title": "Guide étape par étape",
+      "step1": {
+        "title": "Accéder au site officiel",
+        "description": "Rendez-vous sur le site officiel Australian Government pour votre type de visa :"
+      },
+      "step2": {
+        "title": "Se connecter à ImmiAccount",
+        "description": "Créez un compte ou connectez-vous à votre ImmiAccount :"
+      },
+      "step3": {
+        "title": "Créer une nouvelle demande",
+        "description": "Cliquez sur « New application » → Sélectionnez « Working Holiday » → Choisissez le sous-classe"
+      },
+      "step4": {
+        "title": "Remplir le formulaire",
+        "description": "Utilisez les données extraites ci-dessus pour remplir chaque section. Voici le mapping :"
+      },
+      "step5": {
+        "title": "Joindre les documents",
+        "description": "Téléchargez vos documents originaux : fiche de paie, lettre d'employeur, passeport."
+      },
+      "step6": {
+        "title": "Soumettre la demande",
+        "description": "Vérifiez toutes les informations et soumettez votre demande. Conservez le numéro de référence."
+      }
+    },
+    "download": {
+      "pdf": "Télécharger le PDF",
+      "generating": "Génération du PDF..."
+    },
+    "email": {
+      "sent": "Résultats envoyés à"
+    },
+    "fields": {
+      "fullName": "Nom complet",
+      "employerName": "Nom de l'employeur",
+      "employerAbn": "ABN de l'employeur",
+      "jobTitle": "Titre du poste",
+      "employmentType": "Type de contrat",
+      "hoursPerWeek": "Heures par semaine",
+      "totalHours": "Total des heures",
+      "payPeriod": "Période de paie",
+      "grossIncome": "Revenu brut par période",
+      "startDate": "Date de début",
+      "postcode": "Code postal du lieu de travail",
+      "state": "État du lieu de travail",
+      "industry": "Secteur d'activité",
+      "specifiedWork": "Travail spécifié (regional work)"
+    }
+  },
+  "admin": {
+    "title": "Dashboard Admin",
+    "login": {
+      "title": "Accès Admin",
+      "password": "Mot de passe",
+      "submit": "Connexion",
+      "error": "Mot de passe incorrect"
+    },
+    "stats": {
+      "totalRevenue": "Revenus totaux",
+      "totalAnalyses": "Analyses totales",
+      "conversionRate": "Taux de conversion",
+      "paidAnalyses": "Analyses payées"
+    },
+    "table": {
+      "email": "Email",
+      "date": "Date",
+      "visaType": "Type de visa",
+      "status": "Statut",
+      "actions": "Actions",
+      "view": "Voir"
+    }
+  },
+  "common": {
+    "loading": "Chargement...",
+    "error": "Une erreur s'est produite",
+    "back": "Retour",
+    "close": "Fermer"
+  }
+}
