@@ -69,23 +69,19 @@ export async function POST(req: NextRequest) {
 
   // Run AI analysis
   try {
-    const payslipBuffer = Buffer.from(analysis.payslip_b64, "base64");
+    // payslip_b64 stores a JSON array: [{b64, name}, ...]
+    const payslipsRaw: Array<{ b64: string; name: string }> = JSON.parse(analysis.payslip_b64);
+    const payslips = payslipsRaw.map((p) => ({ buffer: Buffer.from(p.b64, "base64"), name: p.name }));
 
-    let letterBuffer: Buffer | undefined;
-    let letterName: string | undefined;
-
-    if (analysis.letter_b64 && analysis.letter_name) {
-      letterBuffer = Buffer.from(analysis.letter_b64, "base64");
-      letterName = analysis.letter_name;
+    const letters: Array<{ buffer: Buffer; name: string }> = [];
+    if (analysis.letter_b64) {
+      const lettersRaw: Array<{ b64: string; name: string }> = JSON.parse(analysis.letter_b64);
+      for (const l of lettersRaw) {
+        letters.push({ buffer: Buffer.from(l.b64, "base64"), name: l.name });
+      }
     }
 
-    const result = await analyzeDocuments(
-      payslipBuffer,
-      analysis.payslip_name,
-      letterBuffer,
-      letterName,
-      analysis.visa_type
-    );
+    const result = await analyzeDocuments(payslips, letters, analysis.visa_type);
 
     // Store results and clear document data (security)
     await supabaseAdmin

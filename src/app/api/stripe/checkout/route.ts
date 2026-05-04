@@ -27,15 +27,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid form data" }, { status: 400 });
   }
 
-  const payslipFile = formData.get("payslip") as File | null;
-  const employerLetterFile = formData.get("employerLetter") as File | null;
+  const payslipFiles = formData.getAll("payslip").filter((v): v is File => v instanceof File && v.size > 0);
+  const letterFiles = formData.getAll("employerLetter").filter((v): v is File => v instanceof File && v.size > 0);
   const email = formData.get("email") as string | null;
   const visaType = formData.get("visaType") as string | null;
   const language = formData.get("language") as string | null;
 
   // Validate required fields
-  if (!payslipFile || payslipFile.size === 0) {
-    return NextResponse.json({ error: "Payslip is required" }, { status: 400 });
+  if (payslipFiles.length === 0) {
+    return NextResponse.json({ error: "At least one payslip is required" }, { status: 400 });
   }
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -46,39 +46,40 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Visa type must be 417 or 462" }, { status: 400 });
   }
 
-  // Validate file types and sizes
-  if (!VALID_TYPES.includes(payslipFile.type)) {
-    return NextResponse.json({ error: "Invalid payslip file type" }, { status: 400 });
-  }
-
-  if (payslipFile.size > MAX_FILE_SIZE) {
-    return NextResponse.json({ error: "Payslip file too large (max 10MB)" }, { status: 400 });
-  }
-
-  if (employerLetterFile && employerLetterFile.size > 0) {
-    if (!VALID_TYPES.includes(employerLetterFile.type)) {
-      return NextResponse.json({ error: "Invalid employer letter file type" }, { status: 400 });
+  // Validate all payslip files
+  for (const file of payslipFiles) {
+    if (!VALID_TYPES.includes(file.type)) {
+      return NextResponse.json({ error: `Invalid file type for ${file.name}` }, { status: 400 });
     }
-    if (employerLetterFile.size > MAX_FILE_SIZE) {
-      return NextResponse.json({ error: "Employer letter too large (max 10MB)" }, { status: 400 });
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json({ error: `File too large (max 10MB): ${file.name}` }, { status: 400 });
     }
   }
 
-  // Read files into buffers (process in memory, never store)
-  const payslipBuffer = Buffer.from(await payslipFile.arrayBuffer());
-  const payslipBase64 = payslipBuffer.toString("base64");
-  const payslipName = payslipFile.name;
-
-  let letterBase64: string | null = null;
-  let letterName: string | null = null;
-
-  if (employerLetterFile && employerLetterFile.size > 0) {
-    const letterBuffer = Buffer.from(await employerLetterFile.arrayBuffer());
-    letterBase64 = letterBuffer.toString("base64");
-    letterName = employerLetterFile.name;
+  // Validate all letter files
+  for (const file of letterFiles) {
+    if (!VALID_TYPES.includes(file.type)) {
+      return NextResponse.json({ error: `Invalid file type for ${file.name}` }, { status: 400 });
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json({ error: `File too large (max 10MB): ${file.name}` }, { status: 400 });
+    }
   }
 
-  // Create Supabase record (before Stripe to get the ID)
+  // Read all files into base64 (process in memory, never store to disk)
+  const payslipsData: Array<{ b64: string; name: string }> = [];
+  for (const file of payslipFiles) {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    payslipsData.push({ b64: buffer.toString("base64"), name: file.name });
+  }
+
+  const lettersData: Array<{ b64: string; name: string }> = [];
+  for (const file of letterFiles) {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    lettersData.push({ b64: buffer.toString("base64"), name: file.name });
+  }
+
+  // Create Supabase record — store arrays as JSON in existing text columns
   const { data: analysis, error: dbError } = await supabaseAdmin
     .from("analyses")
     .insert({
@@ -86,10 +87,10 @@ export async function POST(req: NextRequest) {
       visa_type: visaType as "417" | "462",
       stripe_status: "pending",
       language: language || "fr",
-      payslip_b64: payslipBase64,
-      payslip_name: payslipName,
-      letter_b64: letterBase64,
-      letter_name: letterName,
+      payslip_b64: JSON.stringify(payslipsData),
+      payslip_name: null,
+      letter_b64: lettersData.length > 0 ? JSON.stringify(lettersData) : null,
+      letter_name: null,
     })
     .select("id")
     .single();

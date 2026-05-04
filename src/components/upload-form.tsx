@@ -22,11 +22,6 @@ interface UploadFormProps {
   locale: string;
 }
 
-interface FileState {
-  file: File | null;
-  error: string | null;
-}
-
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 const ACCEPTED_TYPES = {
   "application/pdf": [".pdf"],
@@ -38,8 +33,10 @@ const ACCEPTED_TYPES = {
 export function UploadForm({ locale }: UploadFormProps) {
   const t = useTranslations("upload");
 
-  const [payslip, setPayslip] = useState<FileState>({ file: null, error: null });
-  const [employerLetter, setEmployerLetter] = useState<FileState>({ file: null, error: null });
+  const [payslips, setPayslips] = useState<File[]>([]);
+  const [payslipError, setPayslipError] = useState<string | null>(null);
+  const [letters, setLetters] = useState<File[]>([]);
+  const [letterError, setLetterError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState<string | null>(null);
   const [visaType, setVisaType] = useState<"417" | "462">("417");
@@ -54,24 +51,36 @@ export function UploadForm({ locale }: UploadFormProps) {
   }
 
   const onDropPayslip = useCallback((acceptedFiles: File[]) => {
-    const file = acceptedFiles[0];
-    if (!file) return;
-    const error = validateFile(file);
-    setPayslip({ file: error ? null : file, error });
+    setPayslipError(null);
+    const valid: File[] = [];
+    let err: string | null = null;
+    for (const file of acceptedFiles) {
+      const e = validateFile(file);
+      if (e) { err = e; }
+      else valid.push(file);
+    }
+    if (err) setPayslipError(err);
+    if (valid.length > 0) setPayslips((prev) => [...prev, ...valid]);
   }, []);
 
   const onDropLetter = useCallback((acceptedFiles: File[]) => {
-    const file = acceptedFiles[0];
-    if (!file) return;
-    const error = validateFile(file);
-    setEmployerLetter({ file: error ? null : file, error });
+    setLetterError(null);
+    const valid: File[] = [];
+    let err: string | null = null;
+    for (const file of acceptedFiles) {
+      const e = validateFile(file);
+      if (e) { err = e; }
+      else valid.push(file);
+    }
+    if (err) setLetterError(err);
+    if (valid.length > 0) setLetters((prev) => [...prev, ...valid]);
   }, []);
 
   const { getRootProps: getPayslipRootProps, getInputProps: getPayslipInputProps, isDragActive: isPayslipDrag } =
-    useDropzone({ onDrop: onDropPayslip, accept: ACCEPTED_TYPES, maxFiles: 1, maxSize: MAX_FILE_SIZE });
+    useDropzone({ onDrop: onDropPayslip, accept: ACCEPTED_TYPES, maxSize: MAX_FILE_SIZE, multiple: true });
 
   const { getRootProps: getLetterRootProps, getInputProps: getLetterInputProps, isDragActive: isLetterDrag } =
-    useDropzone({ onDrop: onDropLetter, accept: ACCEPTED_TYPES, maxFiles: 1, maxSize: MAX_FILE_SIZE });
+    useDropzone({ onDrop: onDropLetter, accept: ACCEPTED_TYPES, maxSize: MAX_FILE_SIZE, multiple: true });
 
   function validateEmail(value: string): boolean {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -81,8 +90,8 @@ export function UploadForm({ locale }: UploadFormProps) {
     e.preventDefault();
     setSubmitError(null);
 
-    if (!payslip.file) {
-      setPayslip((p) => ({ ...p, error: t("errors.noPayslip") }));
+    if (payslips.length === 0) {
+      setPayslipError(t("errors.noPayslip"));
       return;
     }
 
@@ -101,8 +110,8 @@ export function UploadForm({ locale }: UploadFormProps) {
 
     try {
       const formData = new FormData();
-      formData.append("payslip", payslip.file);
-      if (employerLetter.file) formData.append("employerLetter", employerLetter.file);
+      for (const f of payslips) formData.append("payslip", f);
+      for (const f of letters) formData.append("employerLetter", f);
       formData.append("email", email);
       formData.append("visaType", visaType);
       formData.append("language", locale);
@@ -145,41 +154,47 @@ export function UploadForm({ locale }: UploadFormProps) {
               {locale === "fr" ? "Obligatoire" : "Required"}
             </Badge>
           </Label>
-          {!payslip.file ? (
-            <div
-              {...getPayslipRootProps()}
-              className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors ${
-                isPayslipDrag
-                  ? "border-blue-400 bg-blue-50"
-                  : payslip.error
-                  ? "border-red-300 bg-red-50"
-                  : "border-gray-300 hover:border-blue-400 hover:bg-blue-50"
-              }`}
-            >
-              <input {...getPayslipInputProps()} />
-              <Upload className="h-10 w-10 text-gray-400 mx-auto mb-3" />
-              <p className="font-medium text-gray-700">{t("payslip.hint")}</p>
-              <p className="text-sm text-gray-400 mt-1">{t("payslip.formats")}</p>
-            </div>
-          ) : (
-            <div className="flex items-center gap-3 p-4 bg-green-50 rounded-xl border border-green-200">
-              <FileText className="h-8 w-8 text-green-600 flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-gray-900 truncate">{payslip.file.name}</p>
-                <p className="text-sm text-gray-500">{formatFileSize(payslip.file.size)}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPayslip({ file: null, error: null })}
-                className="p-1 rounded-full hover:bg-green-200 transition-colors"
-              >
-                <X className="h-4 w-4 text-green-700" />
-              </button>
-            </div>
+
+          <div
+            {...getPayslipRootProps()}
+            className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
+              isPayslipDrag
+                ? "border-blue-400 bg-blue-50"
+                : payslipError
+                ? "border-red-300 bg-red-50"
+                : "border-gray-300 hover:border-blue-400 hover:bg-blue-50"
+            }`}
+          >
+            <input {...getPayslipInputProps()} />
+            <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+            <p className="font-medium text-gray-700">{t("payslip.hint")}</p>
+            <p className="text-sm text-gray-400 mt-1">{t("payslip.formats")}</p>
+          </div>
+
+          {payslips.length > 0 && (
+            <ul className="mt-3 space-y-2">
+              {payslips.map((file, i) => (
+                <li key={i} className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200">
+                  <FileText className="h-5 w-5 text-green-600 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
+                    <p className="text-xs text-gray-500">{formatFileSize(file.size)}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPayslips((prev) => prev.filter((_, idx) => idx !== i))}
+                    className="p-1 rounded-full hover:bg-green-200 transition-colors flex-shrink-0"
+                  >
+                    <X className="h-4 w-4 text-green-700" />
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
-          {payslip.error && (
+
+          {payslipError && (
             <p className="mt-2 text-sm text-red-600 flex items-center gap-1">
-              <AlertCircle className="h-4 w-4" /> {payslip.error}
+              <AlertCircle className="h-4 w-4" /> {payslipError}
             </p>
           )}
         </CardContent>
@@ -194,39 +209,45 @@ export function UploadForm({ locale }: UploadFormProps) {
               {locale === "fr" ? "Optionnel" : "Optional"}
             </Badge>
           </Label>
-          {!employerLetter.file ? (
-            <div
-              {...getLetterRootProps()}
-              className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors ${
-                isLetterDrag
-                  ? "border-blue-400 bg-blue-50"
-                  : "border-gray-200 hover:border-blue-300 hover:bg-blue-50"
-              }`}
-            >
-              <input {...getLetterInputProps()} />
-              <Upload className="h-8 w-8 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500">{t("employerLetter.hint")}</p>
-              <p className="text-sm text-gray-400 mt-1">{t("employerLetter.formats")}</p>
-            </div>
-          ) : (
-            <div className="flex items-center gap-3 p-4 bg-blue-50 rounded-xl border border-blue-200">
-              <FileText className="h-8 w-8 text-blue-600 flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-gray-900 truncate">{employerLetter.file.name}</p>
-                <p className="text-sm text-gray-500">{formatFileSize(employerLetter.file.size)}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setEmployerLetter({ file: null, error: null })}
-                className="p-1 rounded-full hover:bg-blue-200 transition-colors"
-              >
-                <X className="h-4 w-4 text-blue-700" />
-              </button>
-            </div>
+
+          <div
+            {...getLetterRootProps()}
+            className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
+              isLetterDrag
+                ? "border-blue-400 bg-blue-50"
+                : "border-gray-200 hover:border-blue-300 hover:bg-blue-50"
+            }`}
+          >
+            <input {...getLetterInputProps()} />
+            <Upload className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+            <p className="text-gray-500">{t("employerLetter.hint")}</p>
+            <p className="text-sm text-gray-400 mt-1">{t("employerLetter.formats")}</p>
+          </div>
+
+          {letters.length > 0 && (
+            <ul className="mt-3 space-y-2">
+              {letters.map((file, i) => (
+                <li key={i} className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <FileText className="h-5 w-5 text-blue-600 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
+                    <p className="text-xs text-gray-500">{formatFileSize(file.size)}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setLetters((prev) => prev.filter((_, idx) => idx !== i))}
+                    className="p-1 rounded-full hover:bg-blue-200 transition-colors flex-shrink-0"
+                  >
+                    <X className="h-4 w-4 text-blue-700" />
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
-          {employerLetter.error && (
+
+          {letterError && (
             <p className="mt-2 text-sm text-red-600 flex items-center gap-1">
-              <AlertCircle className="h-4 w-4" /> {employerLetter.error}
+              <AlertCircle className="h-4 w-4" /> {letterError}
             </p>
           )}
         </CardContent>

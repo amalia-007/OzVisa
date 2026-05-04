@@ -57,11 +57,8 @@ Guidelines:
 - For ABN: look for "ABN" followed by 11 digits, format as "XX XXX XXX XXX"
 - For specified work: agriculture, horticulture, viticulture, aquaculture, fishing, pearling, tree felling/farming, mining, construction qualify
 - For employment type: look for "casual", "part-time", "full-time" or infer from hours
+- If multiple payslips are provided, use all of them together to extract the most complete and accurate information.
 - Return ONLY valid JSON, no markdown, no explanation.`;
-
-function fileToBase64(buffer: Buffer): string {
-  return buffer.toString("base64");
-}
 
 function getMimeType(filename: string): "image/jpeg" | "image/png" | "image/gif" | "image/webp" | "application/pdf" {
   const ext = filename.split(".").pop()?.toLowerCase();
@@ -75,77 +72,41 @@ function getMimeType(filename: string): "image/jpeg" | "image/png" | "image/gif"
   return mimeTypes[ext || ""] || "application/pdf";
 }
 
+type ContentBlock =
+  | { type: "text"; text: string }
+  | { type: "image"; source: { type: "base64"; media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp"; data: string } }
+  | { type: "document"; source: { type: "base64"; media_type: "application/pdf"; data: string } };
+
+function fileToContentBlock(buffer: Buffer, name: string): ContentBlock {
+  const mime = getMimeType(name);
+  const b64 = buffer.toString("base64");
+  if (mime === "application/pdf") {
+    return { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } };
+  }
+  return { type: "image", source: { type: "base64", media_type: mime as "image/jpeg" | "image/png" | "image/gif" | "image/webp", data: b64 } };
+}
+
 export async function analyzeDocuments(
-  payslipBuffer: Buffer,
-  payslipName: string,
-  employerLetterBuffer?: Buffer,
-  employerLetterName?: string,
+  payslips: Array<{ buffer: Buffer; name: string }>,
+  letters: Array<{ buffer: Buffer; name: string }>,
   visaType: "417" | "462" = "417"
 ): Promise<AnalysisResult> {
-  const payslipMime = getMimeType(payslipName);
-  const payslipBase64 = fileToBase64(payslipBuffer);
-
-  type ContentBlock =
-    | { type: "text"; text: string }
-    | { type: "image"; source: { type: "base64"; media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp"; data: string } }
-    | { type: "document"; source: { type: "base64"; media_type: "application/pdf"; data: string } };
-
   const content: ContentBlock[] = [
     {
       type: "text",
-      text: `Please analyze the following document(s) for a Working Holiday Visa subclass ${visaType} renewal application.\n\nDocument 1: Payslip`,
+      text: `Please analyze the following document(s) for a Working Holiday Visa subclass ${visaType} renewal application.`,
     },
   ];
 
-  if (payslipMime === "application/pdf") {
-    content.push({
-      type: "document",
-      source: {
-        type: "base64",
-        media_type: "application/pdf",
-        data: payslipBase64,
-      },
-    });
-  } else {
-    content.push({
-      type: "image",
-      source: {
-        type: "base64",
-        media_type: payslipMime as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
-        data: payslipBase64,
-      },
-    });
-  }
+  payslips.forEach((doc, i) => {
+    content.push({ type: "text", text: `\nPayslip ${i + 1}: ${doc.name}` });
+    content.push(fileToContentBlock(doc.buffer, doc.name));
+  });
 
-  if (employerLetterBuffer && employerLetterName) {
-    const letterMime = getMimeType(employerLetterName);
-    const letterBase64 = fileToBase64(employerLetterBuffer);
-
-    content.push({
-      type: "text",
-      text: "\nDocument 2: Employer Letter",
-    });
-
-    if (letterMime === "application/pdf") {
-      content.push({
-        type: "document",
-        source: {
-          type: "base64",
-          media_type: "application/pdf",
-          data: letterBase64,
-        },
-      });
-    } else {
-      content.push({
-        type: "image",
-        source: {
-          type: "base64",
-          media_type: letterMime as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
-          data: letterBase64,
-        },
-      });
-    }
-  }
+  letters.forEach((doc, i) => {
+    content.push({ type: "text", text: `\nEmployer Letter ${i + 1}: ${doc.name}` });
+    content.push(fileToContentBlock(doc.buffer, doc.name));
+  });
 
   content.push({
     type: "text",
