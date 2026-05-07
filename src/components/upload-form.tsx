@@ -11,6 +11,7 @@ import {
   Upload,
   FileText,
   X,
+  Eye,
   Loader2,
   Mail,
   CreditCard,
@@ -44,6 +45,16 @@ export function UploadForm({ locale }: UploadFormProps) {
 
   const payslipInputRef = useRef<HTMLInputElement>(null);
   const letterInputRef = useRef<HTMLInputElement>(null);
+
+  const [preview, setPreview] = useState<{ file: File; url: string } | null>(null);
+
+  function openPreview(file: File) {
+    setPreview({ file, url: URL.createObjectURL(file) });
+  }
+  function closePreview() {
+    if (preview) URL.revokeObjectURL(preview.url);
+    setPreview(null);
+  }
 
   function validateFile(file: File): string | null {
     if (!VALID_TYPES.includes(file.type)) return t("errors.invalidType");
@@ -246,6 +257,14 @@ export function UploadForm({ locale }: UploadFormProps) {
                   </div>
                   <button
                     type="button"
+                    onClick={() => openPreview(file)}
+                    className="p-1 rounded-full hover:bg-green-200 transition-colors flex-shrink-0"
+                    aria-label="Preview file"
+                  >
+                    <Eye className="h-4 w-4 text-green-700" />
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setPayslips((prev) => prev.filter((_, idx) => idx !== i))}
                     className="p-1 rounded-full hover:bg-green-200 transition-colors flex-shrink-0"
                     aria-label="Remove file"
@@ -305,6 +324,14 @@ export function UploadForm({ locale }: UploadFormProps) {
                     <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
                     <p className="text-xs text-gray-500">{formatFileSize(file.size)}</p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => openPreview(file)}
+                    className="p-1 rounded-full hover:bg-blue-200 transition-colors flex-shrink-0"
+                    aria-label="Preview file"
+                  >
+                    <Eye className="h-4 w-4 text-blue-700" />
+                  </button>
                   <button
                     type="button"
                     onClick={() => setLetters((prev) => prev.filter((_, idx) => idx !== i))}
@@ -413,6 +440,48 @@ export function UploadForm({ locale }: UploadFormProps) {
           </>
         )}
       </Button>
+
+      {/* ── File preview modal ── */}
+      {preview && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+          onClick={closePreview}
+        >
+          <div
+            className="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl mx-4 max-h-[90vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
+              <p className="text-sm font-medium text-gray-800 truncate pr-4">{preview.file.name}</p>
+              <button
+                type="button"
+                onClick={closePreview}
+                className="p-1.5 rounded-full hover:bg-gray-100 transition-colors flex-shrink-0"
+                aria-label="Close preview"
+              >
+                <X className="h-5 w-5 text-gray-600" />
+              </button>
+            </div>
+            {/* Content */}
+            <div className="flex-1 overflow-auto p-4 min-h-0">
+              {preview.file.type === "application/pdf" ? (
+                <iframe
+                  src={preview.url}
+                  className="w-full h-[75vh] rounded-lg border border-gray-200"
+                  title={preview.file.name}
+                />
+              ) : (
+                <img
+                  src={preview.url}
+                  alt={preview.file.name}
+                  className="max-w-full max-h-[75vh] mx-auto rounded-lg object-contain"
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </form>
   );
 }
