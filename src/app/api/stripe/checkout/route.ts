@@ -96,7 +96,10 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (dbError || !analysis) {
-    console.error("DB error:", dbError);
+    console.error("DB insert failed — code:", dbError?.code);
+    console.error("DB insert failed — message:", dbError?.message);
+    console.error("DB insert failed — details:", dbError?.details);
+    console.error("DB insert failed — hint:", dbError?.hint);
     return NextResponse.json({ error: "Failed to create analysis record" }, { status: 500 });
   }
 
