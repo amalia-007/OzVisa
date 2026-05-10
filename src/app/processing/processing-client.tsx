@@ -69,17 +69,11 @@ function ProcessingInner({
 
         const status = data.stripe_status;
 
-        if (status === "pending") {
-          setCurrentStep("payment");
+        if (status === "pending" || status === "paid") {
+          // Let the visual timers handle step progression — only keep polling
           if (attempts < maxAttempts) {
             attempts++;
             setTimeout(poll, 2000);
-          }
-        } else if (status === "paid") {
-          setCurrentStep("extracting");
-          if (attempts < maxAttempts) {
-            attempts++;
-            setTimeout(poll, 3000);
           }
         } else if (status === "completed") {
           setCurrentStep("done");
