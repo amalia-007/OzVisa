@@ -4,8 +4,10 @@ import type { AnalysisResult } from "./supabase";
 
 let _anthropic: Anthropic | null = null;
 function getAnthropic() {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set");
   if (!_anthropic) {
-    _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+    _anthropic = new Anthropic({ apiKey });
   }
   return _anthropic;
 }
@@ -114,20 +116,32 @@ export async function analyzeDocuments(
   });
 
   const anthropic = getAnthropic();
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 2000,
-    system: EXTRACTION_PROMPT,
-    messages: [
-      {
-        role: "user",
-        content: content as Parameters<typeof anthropic.messages.create>[0]["messages"][0]["content"],
-      },
-    ],
-  });
+  console.log("[claude] Calling messages.create — payslips:", payslips.length, "letters:", letters.length, "visa:", visaType);
+
+  let response: Awaited<ReturnType<typeof anthropic.messages.create>>;
+  try {
+    response = await anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 2000,
+      system: EXTRACTION_PROMPT,
+      messages: [
+        {
+          role: "user",
+          content: content as Parameters<typeof anthropic.messages.create>[0]["messages"][0]["content"],
+        },
+      ],
+    });
+  } catch (apiErr: unknown) {
+    const e = apiErr as { status?: number; message?: string; error?: unknown };
+    console.error("[claude] API call failed — status:", e?.status, "| message:", e?.message, "| error:", JSON.stringify(e?.error));
+    throw apiErr;
+  }
+
+  console.log("[claude] Response received — stop_reason:", response.stop_reason, "| content blocks:", response.content.length);
 
   const textContent = response.content.find((c) => c.type === "text");
   if (!textContent || textContent.type !== "text") {
+    console.error("[claude] No text block in response. Content:", JSON.stringify(response.content));
     throw new Error("No text response from Claude");
   }
 
@@ -136,6 +150,7 @@ export async function analyzeDocuments(
     const jsonText = textContent.text.replace(/```json\n?|\n?```/g, "").trim();
     parsed = JSON.parse(jsonText);
   } catch {
+    console.error("[claude] Failed to parse JSON. Raw text:", textContent.text.substring(0, 500));
     throw new Error("Failed to parse Claude response as JSON");
   }
 
