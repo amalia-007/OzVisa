@@ -125,6 +125,7 @@ export async function POST(req: NextRequest) {
         },
       ],
       mode: "payment",
+      allow_promotion_codes: true,
       customer_email: email,
       success_url: `${appUrl}/processing?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${appUrl}/upload?cancelled=true`,
