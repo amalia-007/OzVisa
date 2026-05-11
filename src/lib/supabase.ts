@@ -17,6 +17,21 @@ export const supabaseAdmin = {
   from: (...args: Parameters<SupabaseClient["from"]>) => getSupabaseAdmin().from(...args),
 };
 
+export type PayslipRecord = {
+  filename: string | null;
+  payPeriodStart: string | null;
+  payPeriodEnd: string | null;
+  hoursWorked: string | null;
+  grossPay: string | null;
+  employerName: string | null;
+  employerAbn: string | null;
+  jobTitle: string | null;
+  employmentType: string | null;
+  postcode: string | null;
+  state: string | null;
+  industry: string | null;
+};
+
 export type EmployerData = {
   employerName: string | null;
   employerAbn: string | null;
@@ -35,6 +50,7 @@ export type EmployerData = {
   specified_work_eligible: boolean | null;
   specified_work_reason: string;
   specified_work_reason_fr: string;
+  payslips: PayslipRecord[];
 };
 
 export type AnalysisResult = {

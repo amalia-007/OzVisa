@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { checkSpecifiedWorkEligibility } from "./specified-work";
-import type { AnalysisResult, EmployerData } from "./supabase";
+import type { AnalysisResult, EmployerData, PayslipRecord } from "./supabase";
 
 let _anthropic: Anthropic | null = null;
 function getAnthropic() {
@@ -12,61 +12,60 @@ function getAnthropic() {
   return _anthropic;
 }
 
-const EXTRACTION_PROMPT = `You are an expert at analyzing Australian employment documents for Working Holiday Visa (WHV) applications.
+const EXTRACTION_PROMPT = `You are an expert at analyzing Australian employment payslips and employer letters for Working Holiday Visa (WHV) applications.
 
-Analyze the provided document(s) and extract employment information needed for Australian WHV subclass 417 or 462 renewal application.
+Analyze each payslip document SEPARATELY and extract per-payslip information.
 
-CRITICAL RULE: If payslips from DIFFERENT employers are provided, you MUST create a SEPARATE entry in the "employers" array for each employer. Each distinct employer name = a new entry. Do NOT merge different employers into one entry. If multiple payslips are from the SAME employer, combine them into one entry with the earliest startDate and most recent endDate.
+CRITICAL RULES:
+- Create ONE entry in the "payslips" array for EACH payslip document provided — do NOT combine multiple payslips
+- Extract the EXACT pay period dates printed on each payslip (look for "Pay Period", "Period From/To", "Period Start/End", "Pay From/To", "Pay Date" range)
+- hoursWorked = the hours worked in THIS specific pay period (NOT the year-to-date total)
+- grossPay = the gross pay for THIS specific pay period (NOT year-to-date)
+- payPeriodStart and payPeriodEnd MUST be in DD/MM/YYYY format
 
 Return a JSON object with EXACTLY this structure:
 {
   "fullName": "string or null (applicant's full name, same across all documents)",
-  "employers": [
+  "payslips": [
     {
+      "filename": "string or null (document name/identifier)",
+      "payPeriodStart": "DD/MM/YYYY or null (start of this pay period)",
+      "payPeriodEnd": "DD/MM/YYYY or null (end of this pay period)",
+      "hoursWorked": "string or null (hours in THIS pay period, e.g. '76.00')",
+      "grossPay": "string or null (gross pay THIS period, e.g. 'AUD 2,450.00')",
       "employerName": "string or null",
-      "employerAbn": "string or null (Australian Business Number, format: XX XXX XXX XXX)",
+      "employerAbn": "string or null (format: XX XXX XXX XXX)",
       "jobTitle": "string or null",
       "employmentType": "casual | part-time | full-time | null",
-      "hoursPerWeek": "string or null (average hours per week for this employer)",
-      "totalHours": "string or null (sum of all hours worked for this employer across all their payslips)",
-      "payPeriod": "weekly | fortnightly | monthly | null",
-      "grossIncome": "string or null (amount with currency, per pay period)",
-      "startDate": "string or null (DD/MM/YYYY — earliest date found for this employer)",
-      "endDate": "string or null (DD/MM/YYYY — most recent payslip date for this employer)",
-      "postcode": "string or null (4-digit Australian postcode)",
+      "postcode": "string or null (4-digit Australian postcode of work location)",
       "state": "QLD | NSW | VIC | SA | WA | TAS | NT | ACT | null",
-      "industry": "string or null (agriculture, hospitality, construction, etc.)",
-      "specifiedWork": "yes | no | possible | null (whether this qualifies as regional specified work)"
+      "industry": "string or null (e.g. agriculture, horticulture, construction, hospitality)"
     }
   ],
   "confidence_scores": {
     "fullName": 0.0-1.0,
+    "payPeriodStart": 0.0-1.0,
+    "payPeriodEnd": 0.0-1.0,
+    "hoursWorked": 0.0-1.0,
+    "grossPay": 0.0-1.0,
     "employerName": 0.0-1.0,
     "employerAbn": 0.0-1.0,
     "jobTitle": 0.0-1.0,
-    "employmentType": 0.0-1.0,
-    "hoursPerWeek": 0.0-1.0,
-    "totalHours": 0.0-1.0,
-    "payPeriod": 0.0-1.0,
-    "grossIncome": 0.0-1.0,
-    "startDate": 0.0-1.0,
     "postcode": 0.0-1.0,
     "state": 0.0-1.0,
-    "industry": 0.0-1.0,
-    "specifiedWork": 0.0-1.0
+    "industry": 0.0-1.0
   },
-  "missing_fields": ["array of field names not found in any document"],
-  "raw_text": "brief summary of all document content"
+  "missing_fields": ["list of field names absent from all documents"],
+  "raw_text": "brief summary of all documents"
 }
 
-Guidelines:
-- Be conservative with confidence scores. Only use >0.9 if clearly stated in the document.
+Additional guidelines:
+- Be conservative with confidence scores — only use >0.9 if the value is explicitly stated
 - For ABN: look for "ABN" followed by 11 digits, format as "XX XXX XXX XXX"
-- For specified work: agriculture, horticulture, viticulture, aquaculture, fishing, pearling, tree felling/farming, mining, construction qualify
-- For employment type: look for "casual", "part-time", "full-time" or infer from hours
-- For totalHours: if multiple payslips exist for the same employer, sum the hours across all of them
-- ALWAYS return at least one entry in the employers array, even if data is incomplete
-- Return ONLY valid JSON, no markdown, no explanation.`;
+- For industry: agriculture, horticulture, viticulture, aquaculture, fishing, pearling, tree felling/farming, mining, construction are WHV specified work categories
+- For payPeriodStart/End: if only one date is shown, use it for both start and end
+- ALWAYS return at least one entry in payslips even if data is incomplete
+- Return ONLY valid JSON — no markdown, no explanation`;
 
 function getMimeType(filename: string): "image/jpeg" | "image/png" | "image/gif" | "image/webp" | "application/pdf" {
   const ext = filename.split(".").pop()?.toLowerCase();
@@ -94,6 +93,85 @@ function fileToContentBlock(buffer: Buffer, name: string): ContentBlock {
   return { type: "image", source: { type: "base64", media_type: mime as "image/jpeg" | "image/png" | "image/gif" | "image/webp", data: b64 } };
 }
 
+function parseDateStr(s: string | null | undefined): Date | null {
+  if (!s) return null;
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
+  const d = new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]));
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function sortDateStr(dates: (string | null | undefined)[], desc = false): string[] {
+  return dates
+    .filter((d): d is string => !!d && parseDateStr(d) !== null)
+    .sort((a, b) => {
+      const da = parseDateStr(a)!.getTime();
+      const db = parseDateStr(b)!.getTime();
+      return desc ? db - da : da - db;
+    });
+}
+
+function groupPayslipsToEmployers(payslips: PayslipRecord[]): EmployerData[] {
+  const map = new Map<string, PayslipRecord[]>();
+  for (const p of payslips) {
+    const key = (p.employerName ?? "__unknown__").trim().toLowerCase();
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(p);
+  }
+
+  return Array.from(map.values()).map((empPayslips) => {
+    const first = empPayslips[0];
+
+    const starts = sortDateStr(empPayslips.map((p) => p.payPeriodStart));
+    const ends = sortDateStr(empPayslips.map((p) => p.payPeriodEnd), true);
+    const startDate = starts[0] ?? null;
+    const endDate = ends[0] ?? null;
+
+    const totalHoursNum = empPayslips.reduce((sum, p) => {
+      const h = parseFloat((p.hoursWorked ?? "").replace(/[^\d.]/g, ""));
+      return isNaN(h) ? sum : sum + h;
+    }, 0);
+
+    // Estimate average hours/week from total hours and date span
+    let hoursPerWeek: string | null = null;
+    if (totalHoursNum > 0 && startDate && endDate) {
+      const s = parseDateStr(startDate);
+      const e = parseDateStr(endDate);
+      if (s && e && e > s) {
+        const weeks = (e.getTime() - s.getTime()) / (7 * 24 * 60 * 60 * 1000);
+        if (weeks > 0) hoursPerWeek = (totalHoursNum / weeks).toFixed(1);
+      }
+    }
+
+    const { eligible, reason, reasonFr } = checkSpecifiedWorkEligibility(
+      first.postcode ?? null,
+      first.state ?? null,
+      first.industry ?? null
+    );
+
+    return {
+      employerName: first.employerName ?? null,
+      employerAbn: first.employerAbn ?? null,
+      jobTitle: first.jobTitle ?? null,
+      employmentType: first.employmentType ?? null,
+      hoursPerWeek,
+      totalHours: totalHoursNum > 0 ? totalHoursNum.toFixed(2) : null,
+      payPeriod: null,
+      grossIncome: null,
+      startDate,
+      endDate,
+      postcode: first.postcode ?? null,
+      state: first.state ?? null,
+      industry: first.industry ?? null,
+      specifiedWork: eligible === true ? "yes" : eligible === false ? "no" : "possible",
+      specified_work_eligible: eligible,
+      specified_work_reason: reason,
+      specified_work_reason_fr: reasonFr,
+      payslips: empPayslips,
+    };
+  });
+}
+
 export async function analyzeDocuments(
   payslips: Array<{ buffer: Buffer; name: string }>,
   letters: Array<{ buffer: Buffer; name: string }>,
@@ -102,7 +180,7 @@ export async function analyzeDocuments(
   const content: ContentBlock[] = [
     {
       type: "text",
-      text: `Please analyze the following document(s) for a Working Holiday Visa subclass ${visaType} renewal application.`,
+      text: `Please analyze the following document(s) for a Working Holiday Visa subclass ${visaType} renewal application. Extract per-payslip data as instructed.`,
     },
   ];
 
@@ -118,7 +196,7 @@ export async function analyzeDocuments(
 
   content.push({
     type: "text",
-    text: "\n\nNow extract all required information and return the JSON as specified.",
+    text: "\n\nExtract per-payslip information and return the JSON as specified.",
   });
 
   const anthropic = getAnthropic();
@@ -128,7 +206,7 @@ export async function analyzeDocuments(
   try {
     response = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 2000,
+      max_tokens: 4096,
       system: EXTRACTION_PROMPT,
       messages: [
         {
@@ -151,8 +229,25 @@ export async function analyzeDocuments(
     throw new Error("No text response from Claude");
   }
 
+  interface RawPayslip {
+    filename?: string | null;
+    payPeriodStart?: string | null;
+    payPeriodEnd?: string | null;
+    hoursWorked?: string | null;
+    grossPay?: string | null;
+    employerName?: string | null;
+    employerAbn?: string | null;
+    jobTitle?: string | null;
+    employmentType?: string | null;
+    postcode?: string | null;
+    state?: string | null;
+    industry?: string | null;
+  }
+
   interface RawClaudeResponse {
     fullName?: string | null;
+    payslips?: RawPayslip[];
+    // Old employer-array format (backwards compat)
     employers?: Array<{
       employerName?: string | null;
       employerAbn?: string | null;
@@ -169,7 +264,7 @@ export async function analyzeDocuments(
       industry?: string | null;
       specifiedWork?: string | null;
     }>;
-    // Old format fallback
+    // Very old fields format
     fields?: {
       fullName?: string | null;
       employerName?: string | null;
@@ -201,68 +296,111 @@ export async function analyzeDocuments(
     throw new Error("Failed to parse Claude response as JSON");
   }
 
-  // Normalise to employers array (handle both new and old format)
-  const rawEmployers = raw.employers && raw.employers.length > 0
-    ? raw.employers
-    : raw.fields
-    ? [raw.fields]
-    : [];
+  let employers: EmployerData[];
 
-  if (rawEmployers.length === 0) {
-    throw new Error("Claude response contained no employer data");
-  }
-
-  const employers: EmployerData[] = rawEmployers.map((emp) => {
+  if (raw.payslips && raw.payslips.length > 0) {
+    // New per-payslip format
+    const payslipRecords: PayslipRecord[] = raw.payslips.map((p) => ({
+      filename: p.filename ?? null,
+      payPeriodStart: p.payPeriodStart ?? null,
+      payPeriodEnd: p.payPeriodEnd ?? null,
+      hoursWorked: p.hoursWorked ?? null,
+      grossPay: p.grossPay ?? null,
+      employerName: p.employerName ?? null,
+      employerAbn: p.employerAbn ?? null,
+      jobTitle: p.jobTitle ?? null,
+      employmentType: p.employmentType ?? null,
+      postcode: p.postcode ?? null,
+      state: p.state ?? null,
+      industry: p.industry ?? null,
+    }));
+    employers = groupPayslipsToEmployers(payslipRecords);
+    console.log("[claude] New format — payslips:", payslipRecords.length, "→ employers:", employers.length);
+  } else if (raw.employers && raw.employers.length > 0) {
+    // Old employer-array format
+    employers = raw.employers.map((emp) => {
+      const { eligible, reason, reasonFr } = checkSpecifiedWorkEligibility(
+        emp.postcode ?? null, emp.state ?? null, emp.industry ?? null
+      );
+      return {
+        employerName: emp.employerName ?? null,
+        employerAbn: emp.employerAbn ?? null,
+        jobTitle: emp.jobTitle ?? null,
+        employmentType: emp.employmentType ?? null,
+        hoursPerWeek: emp.hoursPerWeek ?? null,
+        totalHours: emp.totalHours ?? null,
+        payPeriod: emp.payPeriod ?? null,
+        grossIncome: emp.grossIncome ?? null,
+        startDate: emp.startDate ?? null,
+        endDate: emp.endDate ?? null,
+        postcode: emp.postcode ?? null,
+        state: emp.state ?? null,
+        industry: emp.industry ?? null,
+        specifiedWork: emp.specifiedWork ?? null,
+        specified_work_eligible: eligible,
+        specified_work_reason: reason,
+        specified_work_reason_fr: reasonFr,
+        payslips: [],
+      };
+    });
+    console.log("[claude] Old employers format — employers:", employers.length);
+  } else if (raw.fields) {
+    // Very old fields format
+    const f = raw.fields;
     const { eligible, reason, reasonFr } = checkSpecifiedWorkEligibility(
-      emp.postcode ?? null,
-      emp.state ?? null,
-      emp.industry ?? null
+      f.postcode ?? null, f.state ?? null, f.industry ?? null
     );
-    return {
-      employerName: emp.employerName ?? null,
-      employerAbn: emp.employerAbn ?? null,
-      jobTitle: emp.jobTitle ?? null,
-      employmentType: emp.employmentType ?? null,
-      hoursPerWeek: emp.hoursPerWeek ?? null,
-      totalHours: emp.totalHours ?? null,
-      payPeriod: emp.payPeriod ?? null,
-      grossIncome: emp.grossIncome ?? null,
-      startDate: emp.startDate ?? null,
-      endDate: emp.endDate ?? null,
-      postcode: emp.postcode ?? null,
-      state: emp.state ?? null,
-      industry: emp.industry ?? null,
-      specifiedWork: emp.specifiedWork ?? null,
+    employers = [{
+      employerName: f.employerName ?? null,
+      employerAbn: f.employerAbn ?? null,
+      jobTitle: f.jobTitle ?? null,
+      employmentType: f.employmentType ?? null,
+      hoursPerWeek: f.hoursPerWeek ?? null,
+      totalHours: f.totalHours ?? null,
+      payPeriod: f.payPeriod ?? null,
+      grossIncome: f.grossIncome ?? null,
+      startDate: f.startDate ?? null,
+      endDate: f.endDate ?? null,
+      postcode: f.postcode ?? null,
+      state: f.state ?? null,
+      industry: f.industry ?? null,
+      specifiedWork: f.specifiedWork ?? null,
       specified_work_eligible: eligible,
       specified_work_reason: reason,
       specified_work_reason_fr: reasonFr,
-    };
-  });
+      payslips: [],
+    }];
+    console.log("[claude] Very old fields format");
+  } else {
+    throw new Error("Claude response contained no payslip or employer data");
+  }
 
-  // Primary fields from first employer + applicant name (for backwards compat)
-  const first = rawEmployers[0];
-  const firstFullName = "fullName" in first ? (first as { fullName?: string | null }).fullName : null;
+  // Build legacy fields object from first employer (backwards compat)
+  const first = employers[0];
+  const firstPayslip = first.payslips[0] ?? null;
   const fields = {
-    fullName: raw.fullName ?? firstFullName ?? null,
-    employerName: first.employerName ?? null,
-    employerAbn: first.employerAbn ?? null,
-    jobTitle: first.jobTitle ?? null,
-    employmentType: first.employmentType ?? null,
-    hoursPerWeek: first.hoursPerWeek ?? null,
-    totalHours: first.totalHours ?? null,
-    payPeriod: first.payPeriod ?? null,
-    grossIncome: first.grossIncome ?? null,
-    startDate: first.startDate ?? null,
-    postcode: first.postcode ?? null,
-    state: first.state ?? null,
-    industry: first.industry ?? null,
-    specifiedWork: first.specifiedWork ?? null,
+    fullName: raw.fullName ?? null,
+    employerName: first.employerName,
+    employerAbn: first.employerAbn,
+    jobTitle: first.jobTitle,
+    employmentType: first.employmentType,
+    hoursPerWeek: first.hoursPerWeek,
+    totalHours: first.totalHours,
+    payPeriod: firstPayslip
+      ? (firstPayslip.payPeriodStart && firstPayslip.payPeriodEnd
+        ? `${firstPayslip.payPeriodStart} – ${firstPayslip.payPeriodEnd}`
+        : null)
+      : first.payPeriod,
+    grossIncome: firstPayslip?.grossPay ?? first.grossIncome,
+    startDate: first.startDate,
+    postcode: first.postcode,
+    state: first.state,
+    industry: first.industry,
+    specifiedWork: first.specifiedWork,
   };
 
-  // Overall eligibility: use first qualifying employer, else first employer
-  const primaryEmployer = employers.find((e) => e.specified_work_eligible === true) ?? employers[0];
-
-  console.log("[claude] Parsed employers count:", employers.length);
+  // Overall eligibility: use first qualifying employer, else first
+  const primary = employers.find((e) => e.specified_work_eligible === true) ?? employers[0];
 
   return {
     fields,
@@ -270,8 +408,8 @@ export async function analyzeDocuments(
     missing_fields: raw.missing_fields ?? [],
     confidence_scores: raw.confidence_scores ?? {},
     raw_text: raw.raw_text ?? "",
-    specified_work_eligible: primaryEmployer.specified_work_eligible,
-    specified_work_reason: primaryEmployer.specified_work_reason,
-    specified_work_reason_fr: primaryEmployer.specified_work_reason_fr,
+    specified_work_eligible: primary.specified_work_eligible,
+    specified_work_reason: primary.specified_work_reason,
+    specified_work_reason_fr: primary.specified_work_reason_fr,
   };
 }
