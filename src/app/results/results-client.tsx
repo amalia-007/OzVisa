@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { AnalysisResult, ExtractedFields } from "@/lib/supabase";
 import {
@@ -23,6 +22,7 @@ import {
   Calendar,
   DollarSign,
   Clock,
+  TrendingUp,
 } from "lucide-react";
 
 interface ResultsClientProps {
@@ -35,6 +35,30 @@ interface ResultsClientProps {
   locale: string;
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function parseNumber(s: string | null): number | null {
+  if (!s) return null;
+  const n = parseFloat(s.replace(/[^\d.]/g, ""));
+  return isNaN(n) ? null : n;
+}
+
+function estimateQualifyingDays(result: AnalysisResult): { days: number | null; isEstimate: boolean; note: string } {
+  const { fields } = result;
+  const totalH = parseNumber(fields.totalHours);
+  const hpw = parseNumber(fields.hoursPerWeek);
+
+  if (totalH !== null && hpw !== null && hpw > 0) {
+    const weeks = totalH / hpw;
+    return {
+      days: Math.round(weeks * 7),
+      isEstimate: true,
+      note: `Based on ${fields.totalHours} total hours ÷ ${fields.hoursPerWeek} h/week`,
+    };
+  }
+  return { days: null, isEstimate: false, note: "" };
+}
+
 function generateEmployerEmail(
   lang: "fr" | "en",
   employerName: string,
@@ -42,7 +66,9 @@ function generateEmployerEmail(
   missingFields: string[]
 ): string {
   const name = fullName ?? (lang === "fr" ? "[Votre Prénom Nom]" : "[Your Full Name]");
-  const hasMissingDates = missingFields.some((f) => ["startDate", "hoursPerWeek", "grossIncome", "totalHours"].includes(f));
+  const hasMissingDates = missingFields.some((f) =>
+    ["startDate", "hoursPerWeek", "grossIncome", "totalHours"].includes(f)
+  );
   const hasMissingAbn = missingFields.includes("employerAbn");
 
   if (lang === "fr") {
@@ -78,22 +104,65 @@ Kind regards,
 ${name}`;
 }
 
-const FIELD_ICONS: Partial<Record<keyof ExtractedFields, React.ReactNode>> = {
-  fullName: <User className="h-4 w-4" />,
-  employerName: <Building2 className="h-4 w-4" />,
-  employerAbn: <FileText className="h-4 w-4" />,
-  jobTitle: <Briefcase className="h-4 w-4" />,
-  employmentType: <Briefcase className="h-4 w-4" />,
-  hoursPerWeek: <Clock className="h-4 w-4" />,
-  totalHours: <Clock className="h-4 w-4" />,
-  payPeriod: <Calendar className="h-4 w-4" />,
-  grossIncome: <DollarSign className="h-4 w-4" />,
-  startDate: <Calendar className="h-4 w-4" />,
-  postcode: <MapPin className="h-4 w-4" />,
-  state: <MapPin className="h-4 w-4" />,
-  industry: <Briefcase className="h-4 w-4" />,
-  specifiedWork: <CheckCircle2 className="h-4 w-4" />,
-};
+// ─── Field row ────────────────────────────────────────────────────────────────
+
+function FieldRow({
+  icon,
+  label,
+  value,
+  hint,
+  confidence,
+  copiedKey,
+  onCopy,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string | null;
+  hint: string;
+  confidence: number;
+  copiedKey: string;
+  onCopy: (v: string, k: string) => void;
+}) {
+  const missing = !value;
+  const lowConfidence = !missing && confidence < 0.5;
+
+  return (
+    <div className="flex items-start gap-3 py-4 px-5 border-b border-gray-100 last:border-0">
+      <div className="text-gray-400 mt-0.5 flex-shrink-0">{icon}</div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 mb-0.5">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{label}</p>
+          {lowConfidence && (
+            <span title="Please verify this field manually" className="cursor-help text-amber-500">
+              ⚠️
+            </span>
+          )}
+        </div>
+        {missing ? (
+          <p className="text-base text-gray-400 italic">—</p>
+        ) : (
+          <p className="text-base font-semibold text-gray-900 font-mono">{value}</p>
+        )}
+        <p className="text-xs text-gray-400 mt-0.5">{hint}</p>
+      </div>
+      {!missing && (
+        <button
+          onClick={() => onCopy(value!, copiedKey)}
+          className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition-colors text-xs font-medium mt-0.5"
+          title="Copy"
+        >
+          {copiedKey === "copied" ? (
+            <><Check className="h-3.5 w-3.5 text-green-600" /> <span className="text-green-600">✓</span></>
+          ) : (
+            <><Copy className="h-3.5 w-3.5" /> Copy</>
+          )}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 
 export function ResultsClient({
   analysisId,
@@ -101,16 +170,18 @@ export function ResultsClient({
   visaType,
   language,
   result,
-  createdAt,
   locale,
 }: ResultsClientProps) {
   const t = useTranslations("results");
   const isFrench = language === "fr" || locale === "fr";
+
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
-  const [checklist, setChecklist] = useState<Record<string, boolean>>({});
+  const [checklist, setChecklist] = useState<Record<number, boolean>>({});
   const [emailLang, setEmailLang] = useState<"fr" | "en">(isFrench ? "fr" : "en");
   const [emailCopied, setEmailCopied] = useState(false);
+
+  const { fields, confidence_scores, specified_work_eligible, specified_work_reason, missing_fields } = result;
 
   const fieldLabels: Record<keyof ExtractedFields, string> = {
     fullName: t("fields.fullName"),
@@ -129,21 +200,21 @@ export function ResultsClient({
     specifiedWork: t("fields.specifiedWork"),
   };
 
-  const visaApplicationMapping: Record<keyof ExtractedFields, string> = {
-    fullName: isFrench ? "Section \"Détails personnels\" → Nom et prénom" : "\"Personal details\" section → Full name",
-    employerName: isFrench ? "Section \"Historique d'emploi\" → Nom de l'employeur" : "\"Employment history\" section → Employer name",
-    employerAbn: isFrench ? "Section \"Historique d'emploi\" → ABN de l'employeur" : "\"Employment history\" section → Employer ABN",
-    jobTitle: isFrench ? "Section \"Historique d'emploi\" → Titre du poste" : "\"Employment history\" section → Job title",
-    employmentType: isFrench ? "Section \"Historique d'emploi\" → Type d'emploi" : "\"Employment history\" section → Employment type",
-    hoursPerWeek: isFrench ? "Section \"Historique d'emploi\" → Heures moyennes par semaine" : "\"Employment history\" section → Average hours per week",
-    totalHours: isFrench ? "Section \"Travail spécifié\" → Total d'heures effectuées" : "\"Specified work\" section → Total hours completed",
-    payPeriod: isFrench ? "Section \"Revenus\" → Fréquence de paiement" : "\"Income\" section → Payment frequency",
-    grossIncome: isFrench ? "Section \"Revenus\" → Revenu brut par période" : "\"Income\" section → Gross income per period",
-    startDate: isFrench ? "Section \"Historique d'emploi\" → Date de début" : "\"Employment history\" section → Start date",
-    postcode: isFrench ? "Section \"Historique d'emploi\" → Code postal du lieu de travail" : "\"Employment history\" section → Work location postcode",
-    state: isFrench ? "Section \"Historique d'emploi\" → État/Territoire" : "\"Employment history\" section → State/Territory",
-    industry: isFrench ? "Section \"Travail spécifié\" → Secteur d'activité" : "\"Specified work\" section → Industry/sector",
-    specifiedWork: isFrench ? "Section \"Travail spécifié\" → Éligibilité au travail régional" : "\"Specified work\" section → Regional work eligibility",
+  const immiHints: Record<keyof ExtractedFields, string> = {
+    fullName: isFrench ? "Détails personnels → Nom complet" : "Personal details → Full name",
+    employerName: isFrench ? "Historique d'emploi → Employeur" : "Employment history → Employer name",
+    employerAbn: isFrench ? "Historique d'emploi → ABN employeur" : "Employment history → Employer ABN",
+    jobTitle: isFrench ? "Historique d'emploi → Titre du poste" : "Employment history → Job title",
+    employmentType: isFrench ? "Historique d'emploi → Type de contrat" : "Employment history → Employment type",
+    hoursPerWeek: isFrench ? "Historique d'emploi → Heures/semaine" : "Employment history → Hours/week",
+    totalHours: isFrench ? "Travail spécifié → Total heures" : "Specified work → Total hours",
+    payPeriod: isFrench ? "Revenus → Fréquence de paiement" : "Income → Pay frequency",
+    grossIncome: isFrench ? "Revenus → Revenu brut par période" : "Income → Gross income per period",
+    startDate: isFrench ? "Historique d'emploi → Date de début" : "Employment history → Start date",
+    postcode: isFrench ? "Historique d'emploi → Code postal" : "Employment history → Work postcode",
+    state: isFrench ? "Historique d'emploi → État/Territoire" : "Employment history → State/Territory",
+    industry: isFrench ? "Travail spécifié → Secteur" : "Specified work → Industry sector",
+    specifiedWork: isFrench ? "Travail spécifié → Éligibilité régionale" : "Specified work → Regional eligibility",
   };
 
   async function copyToClipboard(value: string, field: string) {
@@ -156,191 +227,355 @@ export function ResultsClient({
     setIsDownloadingPdf(true);
     try {
       const res = await fetch(`/api/results/pdf?id=${analysisId}`);
-      if (!res.ok) throw new Error("PDF generation failed");
+      if (!res.ok) throw new Error();
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `ozvisa-results-${analysisId.slice(0, 8)}.pdf`;
+      a.download = `ozvisa-${analysisId.slice(0, 8)}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      alert(isFrench ? "Erreur lors de la génération du PDF" : "Error generating PDF");
+      alert(isFrench ? "Erreur PDF" : "PDF error");
     } finally {
       setIsDownloadingPdf(false);
     }
-  }
-
-  function getConfidenceColor(score: number): string {
-    if (score >= 0.8) return "text-green-600";
-    if (score >= 0.5) return "text-yellow-600";
-    return "text-red-600";
-  }
-
-  function getConfidenceLabel(score: number): string {
-    if (score >= 0.8) return isFrench ? "Haute" : "High";
-    if (score >= 0.5) return isFrench ? "Moyenne" : "Medium";
-    return isFrench ? "Faible" : "Low";
   }
 
   const visaUrl = visaType === "417"
     ? "https://immi.homeaffairs.gov.au/visas/getting-a-visa/visa-listing/work-holiday-417"
     : "https://immi.homeaffairs.gov.au/visas/getting-a-visa/visa-listing/work-and-holiday-462";
 
-  const fieldOrder: (keyof ExtractedFields)[] = [
-    "fullName", "employerName", "employerAbn", "jobTitle", "employmentType",
-    "hoursPerWeek", "totalHours", "payPeriod", "grossIncome", "startDate",
-    "postcode", "state", "industry", "specifiedWork",
+  // Days counter
+  const TARGET_DAYS_2ND = 88;
+  const TARGET_DAYS_3RD = 179;
+  const { days: estimatedDays, isEstimate, note: daysNote } = estimateQualifyingDays(result);
+  const isEligible2nd = specified_work_eligible === true;
+  const daysToGo2nd = estimatedDays !== null ? Math.max(0, TARGET_DAYS_2ND - estimatedDays) : null;
+  const pct = estimatedDays !== null ? Math.min(100, Math.round((estimatedDays / TARGET_DAYS_2ND) * 100)) : null;
+  const barColor = pct === null ? "bg-gray-300"
+    : pct >= 100 ? "bg-green-500"
+    : pct >= 80 ? "bg-yellow-400"
+    : pct >= 33 ? "bg-orange-400"
+    : "bg-red-400";
+  const barTextColor = pct === null ? "text-gray-500"
+    : pct >= 100 ? "text-green-700"
+    : pct >= 80 ? "text-yellow-700"
+    : pct >= 33 ? "text-orange-700"
+    : "text-red-700";
+
+  // Checklist items
+  const checklistItems = isFrench ? [
+    "J'ai mon TFN (Tax File Number)",
+    "Mon passeport est disponible (page photo + tampons d'entrée)",
+    "J'ai toutes mes fiches de paie sauvegardées",
+    "J'ai l'ABN de mon employeur",
+    "J'ai une lettre d'employeur (ou j'en ai fait la demande)",
+    "Je me suis connecté à ImmiAccount",
+    "J'ai vérifié mon éligibilité au travail spécifié (88 jours)",
+    "J'ai soumis ma demande de renouvellement WHV",
+  ] : [
+    "I have my TFN (Tax File Number)",
+    "My passport is available (photo page + entry stamps)",
+    "I have all my payslips saved",
+    "I have my employer's ABN",
+    "I have an employer letter (or have requested one)",
+    "I have logged into ImmiAccount",
+    "I have verified my specified work eligibility (88 days)",
+    "I have submitted my WHV renewal application",
   ];
 
+  const checkedCount = Object.values(checklist).filter(Boolean).length;
+
   return (
-    <div className="space-y-8">
-      {/* Header */}
+    <div className="space-y-6">
+
+      {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">{t("title")}</h1>
-          <p className="mt-1 text-gray-500 text-sm">{t("subtitle")}</p>
-          <p className="mt-1 text-xs text-gray-400">
-            <Mail className="h-3 w-3 inline mr-1" />
-            {t("email.sent")} {email}
+          <h1 className="text-2xl font-bold text-gray-900">{t("title")}</h1>
+          <p className="mt-1 text-xs text-gray-400 flex items-center gap-1">
+            <Mail className="h-3 w-3" /> {t("email.sent")} {email}
           </p>
         </div>
-        <div className="flex gap-3 flex-wrap">
-          <Button
-            variant="outline"
-            onClick={downloadPdf}
-            disabled={isDownloadingPdf}
-            className="gap-2"
-          >
-            <Download className="h-4 w-4" />
-            {isDownloadingPdf ? t("download.generating") : t("download.pdf")}
-          </Button>
-        </div>
+        <Button variant="outline" onClick={downloadPdf} disabled={isDownloadingPdf} className="gap-2 flex-shrink-0">
+          <Download className="h-4 w-4" />
+          {isDownloadingPdf ? t("download.generating") : t("download.pdf")}
+        </Button>
       </div>
 
-      {/* Eligibility */}
-      <Card
-        className={`border-2 ${
-          result.specified_work_eligible === true
-            ? "border-green-400 bg-green-50"
-            : result.specified_work_eligible === false
-            ? "border-red-300 bg-red-50"
-            : "border-yellow-300 bg-yellow-50"
-        }`}
-      >
+      {/* ── 1. Days counter ── */}
+      <Card className="border-2 border-blue-100 bg-gradient-to-br from-blue-50 to-white overflow-hidden">
+        <CardContent className="p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <TrendingUp className="h-5 w-5 text-blue-600" />
+            <h2 className="text-lg font-bold text-gray-900">
+              {isFrench ? "Jours de travail spécifié validés" : "Validated specified work days"}
+            </h2>
+          </div>
+
+          {/* Counter display */}
+          <div className="flex items-end gap-3 mb-3">
+            <span className={`text-5xl font-bold tabular-nums ${barTextColor}`}>
+              {estimatedDays !== null ? estimatedDays : "?"}
+            </span>
+            <span className="text-2xl text-gray-400 font-light mb-1">/ {TARGET_DAYS_2ND}</span>
+            <span className="text-sm text-gray-500 mb-2">
+              {isFrench ? "jours requis (2ème WHV)" : "days required (2nd WHV)"}
+            </span>
+          </div>
+
+          {/* Progress bar */}
+          <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden mb-2">
+            <div
+              className={`h-4 rounded-full transition-all duration-500 ${barColor}`}
+              style={{ width: pct !== null ? `${pct}%` : "0%" }}
+            />
+          </div>
+          <div className="flex justify-between text-xs text-gray-400 mb-4">
+            <span>0</span>
+            <span className="font-medium">{TARGET_DAYS_2ND} {isFrench ? "jours" : "days"}</span>
+            <span>{TARGET_DAYS_3RD} {isFrench ? "(3ème WHV)" : "(3rd WHV)"}</span>
+          </div>
+
+          {/* Status line */}
+          {estimatedDays !== null ? (
+            daysToGo2nd === 0 ? (
+              <p className="text-sm font-semibold text-green-700">
+                ✅ {isFrench ? "Vous avez atteint les 88 jours requis pour le 2ème WHV." : "You have reached the 88 days required for your 2nd WHV."}
+              </p>
+            ) : (
+              <p className="text-sm font-semibold text-orange-700">
+                ⏳ {isFrench
+                  ? `Il vous manque encore ${daysToGo2nd} jours pour atteindre les 88 jours requis.`
+                  : `You still need ${daysToGo2nd} more days to reach the required 88 days.`}
+              </p>
+            )
+          ) : (
+            <p className="text-sm text-gray-500">
+              {isFrench
+                ? "Impossible d'estimer automatiquement — fournissez une fiche de paie avec le total d'heures et le nombre d'heures par semaine."
+                : "Cannot estimate automatically — provide a payslip showing total hours and hours per week."}
+            </p>
+          )}
+
+          {/* Breakdown */}
+          {(fields.employerName || fields.jobTitle) && (
+            <div className="mt-4 pt-4 border-t border-blue-100">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                {isFrench ? "Détail par employeur" : "Breakdown by employer"}
+              </p>
+              <div className={`flex items-center gap-3 p-3 rounded-lg ${specified_work_eligible === true ? "bg-green-50 border border-green-200" : specified_work_eligible === false ? "bg-red-50 border border-red-200" : "bg-gray-50 border border-gray-200"}`}>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-gray-900">
+                    {fields.employerName ?? "—"}{fields.jobTitle ? ` · ${fields.jobTitle}` : ""}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {fields.state ?? ""}{fields.postcode ? ` ${fields.postcode}` : ""}
+                    {fields.industry ? ` · ${fields.industry}` : ""}
+                  </p>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className={`text-lg font-bold ${barTextColor}`}>
+                    {estimatedDays !== null ? estimatedDays : "?"} {isFrench ? "j." : "d."}
+                  </p>
+                  <p className="text-xs">
+                    {specified_work_eligible === true ? "✅ qualifié" : specified_work_eligible === false ? "❌ non qualifié" : "❓ à vérifier"}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isEstimate && (
+            <p className="mt-3 text-xs text-gray-400 italic">
+              {isFrench ? `Estimation : ${daysNote}` : `Estimate: ${daysNote}`}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── 2. Eligibility verdict ── */}
+      <Card className={`border-2 ${
+        specified_work_eligible === true ? "border-green-400" :
+        specified_work_eligible === false ? "border-red-300" : "border-yellow-300"
+      }`}>
         <CardContent className="p-6">
           <div className="flex items-start gap-4">
-            {result.specified_work_eligible === true ? (
-              <CheckCircle2 className="h-8 w-8 text-green-600 flex-shrink-0 mt-0.5" />
-            ) : result.specified_work_eligible === false ? (
-              <XCircle className="h-8 w-8 text-red-600 flex-shrink-0 mt-0.5" />
-            ) : (
-              <AlertCircle className="h-8 w-8 text-yellow-600 flex-shrink-0 mt-0.5" />
-            )}
-            <div>
-              <h2 className="text-xl font-bold text-gray-900 mb-1">{t("eligibility.title")}</h2>
-              <p className="text-gray-700">
-                {result.specified_work_eligible === true
-                  ? t("eligibility.eligible")
-                  : result.specified_work_eligible === false
-                  ? t("eligibility.notEligible")
-                  : t("eligibility.uncertain")}
-              </p>
-              <p className="mt-2 text-sm text-gray-600">{result.specified_work_reason}</p>
+            <div className={`flex-shrink-0 w-14 h-14 rounded-2xl flex items-center justify-center text-3xl ${
+              specified_work_eligible === true ? "bg-green-100" :
+              specified_work_eligible === false ? "bg-red-100" : "bg-yellow-100"
+            }`}>
+              {specified_work_eligible === true ? "✅" : specified_work_eligible === false ? "❌" : "❓"}
+            </div>
+            <div className="flex-1">
+              <h2 className={`text-xl font-bold mb-1 ${
+                specified_work_eligible === true ? "text-green-800" :
+                specified_work_eligible === false ? "text-red-800" : "text-yellow-800"
+              }`}>
+                {specified_work_eligible === true
+                  ? (isFrench ? "Vous êtes éligible au 2ème WHV" : "You ARE eligible for your 2nd WHV")
+                  : specified_work_eligible === false
+                  ? (isFrench ? "Pas encore éligible au 2ème WHV" : "You are NOT yet eligible for your 2nd WHV")
+                  : (isFrench ? "Éligibilité à vérifier" : "Eligibility needs verification")}
+              </h2>
+
+              {/* Days missing callout */}
+              {!isEligible2nd && daysToGo2nd !== null && daysToGo2nd > 0 && (
+                <div className="inline-flex items-center gap-2 bg-red-100 text-red-800 rounded-lg px-3 py-1.5 text-sm font-semibold mb-3">
+                  <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                  {isFrench
+                    ? `Il vous manque ${daysToGo2nd} jours de travail spécifié en zone régionale`
+                    : `You need ${daysToGo2nd} more days of specified work in a regional area`}
+                </div>
+              )}
+
+              <p className="text-sm text-gray-700 mb-3">{specified_work_reason}</p>
+
+              {/* Job qualification breakdown */}
+              <div className={`rounded-lg p-3 text-sm ${
+                specified_work_eligible === true ? "bg-green-50" :
+                specified_work_eligible === false ? "bg-red-50" : "bg-gray-50"
+              }`}>
+                <p className="font-semibold text-gray-800 mb-1">
+                  {fields.jobTitle ?? fields.industry ?? (isFrench ? "Votre emploi" : "Your job")}
+                  {fields.employerName ? ` · ${fields.employerName}` : ""}
+                </p>
+                <p className="text-xs text-gray-600">
+                  {specified_work_eligible === true
+                    ? (isFrench ? "✅ Qualifie comme travail spécifié" : "✅ Qualifies as specified work")
+                    : specified_work_eligible === false
+                    ? (isFrench ? "❌ Ne qualifie pas comme travail spécifié" : "❌ Does not qualify as specified work")
+                    : (isFrench ? "❓ À vérifier avec le service de l'immigration" : "❓ To verify with immigration")}
+                </p>
+                {fields.postcode && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    📍 {fields.postcode}{fields.state ? `, ${fields.state}` : ""}
+                    {" — "}
+                    {specified_work_eligible === false && !fields.industry?.toLowerCase().includes("region")
+                      ? (isFrench ? "zone non régionale ou secteur non qualifiant" : "non-regional area or non-qualifying sector")
+                      : (isFrench ? "zone régionale" : "regional area")}
+                  </p>
+                )}
+              </div>
+
               <a
                 href="https://immi.homeaffairs.gov.au/visas/getting-a-visa/visa-listing/work-holiday-417/specified-work"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-2 text-sm text-blue-600 hover:underline flex items-center gap-1 w-fit"
+                className="mt-3 text-xs text-blue-600 hover:underline flex items-center gap-1 w-fit"
               >
-                <ExternalLink className="h-3.5 w-3.5" />
-                {t("eligibility.learnMore")}
+                <ExternalLink className="h-3 w-3" />
+                {isFrench ? "Voir les règles officielles (immi.homeaffairs.gov.au)" : "Official specified work rules (immi.homeaffairs.gov.au)"}
               </a>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Extracted Data */}
+      {/* ── 3. Extracted data — grouped ── */}
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-blue-600" />
             {t("extractedData.title")}
           </CardTitle>
+          <p className="text-xs text-gray-400">
+            {isFrench ? "⚠️ = valeur à faible confiance — vérifiez manuellement" : "⚠️ = low confidence field — verify manually"}
+          </p>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="divide-y divide-gray-100">
-            {fieldOrder.map((field) => {
-              const value = result.fields[field];
-              const confidence = result.confidence_scores[field] || 0;
-              const isMissing = !value || result.missing_fields.includes(field);
 
-              return (
-                <div key={field} className="flex items-center gap-3 px-6 py-4 hover:bg-gray-50 group">
-                  <div className="text-gray-400 flex-shrink-0">{FIELD_ICONS[field]}</div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                      {fieldLabels[field]}
-                    </p>
-                    {isMissing ? (
-                      <p className="text-sm text-gray-400 italic mt-0.5">{t("extractedData.missing")}</p>
-                    ) : (
-                      <p className="text-sm font-medium text-gray-900 mt-0.5 font-mono">{value}</p>
-                    )}
-                    <p className="text-xs text-gray-400 mt-0.5">{visaApplicationMapping[field]}</p>
-                  </div>
-                  {!isMissing && (
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      <span className={`text-xs font-medium ${getConfidenceColor(confidence)}`}>
-                        {getConfidenceLabel(confidence)}
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => copyToClipboard(value!, field)}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity gap-1.5"
-                      >
-                        {copiedField === field ? (
-                          <>
-                            <Check className="h-3.5 w-3.5 text-green-600" />
-                            <span className="text-green-600 text-xs">{t("extractedData.copied")}</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="h-3.5 w-3.5" />
-                            <span className="text-xs">{t("extractedData.copy")}</span>
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          {/* 👤 Personal Info */}
+          <SectionHeader icon="👤" title={isFrench ? "Informations personnelles" : "Personal info"} />
+          <FieldRow
+            icon={<User className="h-4 w-4" />}
+            label={fieldLabels.fullName}
+            value={fields.fullName}
+            hint={immiHints.fullName}
+            confidence={confidence_scores.fullName ?? 1}
+            copiedKey={copiedField === "fullName" ? "copied" : "fullName"}
+            onCopy={copyToClipboard}
+          />
+
+          {/* 🏢 Employer */}
+          <SectionHeader icon="🏢" title={isFrench ? "Employeur" : "Employer"} />
+          {(["employerName", "employerAbn", "jobTitle", "employmentType", "industry"] as const).map((f) => (
+            <FieldRow
+              key={f}
+              icon={f === "employerName" ? <Building2 className="h-4 w-4" /> : f === "industry" ? <Briefcase className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
+              label={fieldLabels[f]}
+              value={fields[f]}
+              hint={immiHints[f]}
+              confidence={confidence_scores[f] ?? 1}
+              copiedKey={copiedField === f ? "copied" : f}
+              onCopy={copyToClipboard}
+            />
+          ))}
+
+          {/* 💰 Pay */}
+          <SectionHeader icon="💰" title={isFrench ? "Rémunération" : "Pay"} />
+          {(["payPeriod", "grossIncome", "hoursPerWeek", "totalHours"] as const).map((f) => (
+            <FieldRow
+              key={f}
+              icon={f === "grossIncome" ? <DollarSign className="h-4 w-4" /> : <Clock className="h-4 w-4" />}
+              label={fieldLabels[f]}
+              value={fields[f]}
+              hint={immiHints[f]}
+              confidence={confidence_scores[f] ?? 1}
+              copiedKey={copiedField === f ? "copied" : f}
+              onCopy={copyToClipboard}
+            />
+          ))}
+
+          {/* 📍 Location & Dates */}
+          <SectionHeader icon="📍" title={isFrench ? "Lieu & Dates" : "Location & Dates"} />
+          {(["startDate", "postcode", "state"] as const).map((f) => (
+            <FieldRow
+              key={f}
+              icon={f === "startDate" ? <Calendar className="h-4 w-4" /> : <MapPin className="h-4 w-4" />}
+              label={fieldLabels[f]}
+              value={fields[f]}
+              hint={immiHints[f]}
+              confidence={confidence_scores[f] ?? 1}
+              copiedKey={copiedField === f ? "copied" : f}
+              onCopy={copyToClipboard}
+            />
+          ))}
+
+          {/* ✅ Eligibility */}
+          <SectionHeader icon="✅" title={isFrench ? "Travail spécifié" : "Specified work"} />
+          <FieldRow
+            icon={<CheckCircle2 className="h-4 w-4" />}
+            label={fieldLabels.specifiedWork}
+            value={fields.specifiedWork}
+            hint={immiHints.specifiedWork}
+            confidence={confidence_scores.specifiedWork ?? 1}
+            copiedKey={copiedField === "specifiedWork" ? "copied" : "specifiedWork"}
+            onCopy={copyToClipboard}
+          />
         </CardContent>
       </Card>
 
-      {/* Missing fields notice */}
-      {result.missing_fields.length > 0 && (
+      {/* ── Missing fields notice ── */}
+      {missing_fields.length > 0 && (
         <div className="p-4 bg-yellow-50 rounded-xl border border-yellow-200 flex items-start gap-3">
           <AlertCircle className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="font-medium text-yellow-800">
-              {isFrench ? "Informations manquantes" : "Missing information"}
+            <p className="font-medium text-yellow-800 text-sm">
+              {isFrench ? "Champs non extraits" : "Fields not extracted"}
             </p>
             <p className="text-sm text-yellow-700 mt-1">
-              {isFrench
-                ? `Les champs suivants n'ont pas pu être extraits : ${result.missing_fields.map(f => fieldLabels[f as keyof ExtractedFields] || f).join(", ")}. Vous devrez les renseigner manuellement.`
-                : `The following fields could not be extracted: ${result.missing_fields.map(f => fieldLabels[f as keyof ExtractedFields] || f).join(", ")}. You'll need to fill them in manually.`}
+              {missing_fields.map((f) => fieldLabels[f as keyof ExtractedFields] || f).join(", ")}
+              {" — "}
+              {isFrench ? "à saisir manuellement dans ImmiAccount." : "enter these manually in ImmiAccount."}
             </p>
           </div>
         </div>
       )}
 
-      {/* Employer email generator */}
-      {result.fields.employerName && (
+      {/* ── Employer email generator ── */}
+      {fields.employerName && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -349,23 +584,24 @@ export function ResultsClient({
             </CardTitle>
             <p className="text-sm text-gray-500">
               {isFrench
-                ? "Utilisez ce modèle pour demander vos fiches de paie ou une lettre d'employeur."
-                : "Use this template to request missing payslips or an employer letter."}
+                ? "Modèle prêt à envoyer pour demander vos fiches de paie ou lettre d'employeur."
+                : "Ready-to-send template to request payslips or employer letter."}
             </p>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex gap-2">
-              <button
-                onClick={() => setEmailLang("fr")}
-                className={`px-3 py-1 rounded-md text-sm font-medium border transition-colors ${emailLang === "fr" ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200 hover:border-blue-300"}`}
-              >🇫🇷 Français</button>
-              <button
-                onClick={() => setEmailLang("en")}
-                className={`px-3 py-1 rounded-md text-sm font-medium border transition-colors ${emailLang === "en" ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200 hover:border-blue-300"}`}
-              >🇬🇧 English</button>
+              {(["fr", "en"] as const).map((lang) => (
+                <button
+                  key={lang}
+                  onClick={() => setEmailLang(lang)}
+                  className={`px-3 py-1 rounded-md text-sm font-medium border transition-colors ${emailLang === lang ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200 hover:border-blue-300"}`}
+                >
+                  {lang === "fr" ? "🇫🇷 Français" : "🇬🇧 English"}
+                </button>
+              ))}
             </div>
             <pre className="whitespace-pre-wrap text-sm bg-gray-50 rounded-lg p-4 border border-gray-200 font-sans leading-relaxed text-gray-800">
-              {generateEmployerEmail(emailLang, result.fields.employerName, result.fields.fullName, result.missing_fields)}
+              {generateEmployerEmail(emailLang, fields.employerName, fields.fullName, missing_fields)}
             </pre>
             <Button
               variant="outline"
@@ -373,19 +609,21 @@ export function ResultsClient({
               className="gap-2"
               onClick={async () => {
                 await navigator.clipboard.writeText(
-                  generateEmployerEmail(emailLang, result.fields.employerName!, result.fields.fullName, result.missing_fields)
+                  generateEmployerEmail(emailLang, fields.employerName!, fields.fullName, missing_fields)
                 );
                 setEmailCopied(true);
                 setTimeout(() => setEmailCopied(false), 2000);
               }}
             >
-              {emailCopied ? <><Check className="h-4 w-4 text-green-600" />{isFrench ? "Copié !" : "Copied!"}</> : <><Copy className="h-4 w-4" />{isFrench ? "Copier l'email" : "Copy email"}</>}
+              {emailCopied
+                ? <><Check className="h-4 w-4 text-green-600" />{isFrench ? "Copié !" : "Copied!"}</>
+                : <><Copy className="h-4 w-4" />{isFrench ? "Copier l'email" : "Copy email"}</>}
             </Button>
           </CardContent>
         </Card>
       )}
 
-      {/* Step-by-step guide */}
+      {/* ── Step-by-step guide ── */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -394,128 +632,67 @@ export function ResultsClient({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          <GuideStep
-            number={1}
-            title={t("guide.step1.title")}
-            description={t("guide.step1.description")}
-          >
-            <a
-              href={visaUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-50 text-blue-700 text-sm font-medium hover:bg-blue-100 transition-colors"
-            >
-              <ExternalLink className="h-4 w-4" />
-              {`WHV ${visaType} — immi.homeaffairs.gov.au`}
+          <GuideStep number={1} title={t("guide.step1.title")} description={t("guide.step1.description")}>
+            <a href={visaUrl} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-50 text-blue-700 text-sm font-medium hover:bg-blue-100 transition-colors">
+              <ExternalLink className="h-4 w-4" /> {`WHV ${visaType} — immi.homeaffairs.gov.au`}
             </a>
           </GuideStep>
-
-          <GuideStep
-            number={2}
-            title={t("guide.step2.title")}
-            description={t("guide.step2.description")}
-          >
-            <a
-              href="https://online.immi.gov.au/lusc/login"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-50 text-blue-700 text-sm font-medium hover:bg-blue-100 transition-colors"
-            >
-              <ExternalLink className="h-4 w-4" />
-              ImmiAccount Login
+          <GuideStep number={2} title={t("guide.step2.title")} description={t("guide.step2.description")}>
+            <a href="https://online.immi.gov.au/lusc/login" target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-50 text-blue-700 text-sm font-medium hover:bg-blue-100 transition-colors">
+              <ExternalLink className="h-4 w-4" /> ImmiAccount Login
             </a>
           </GuideStep>
-
-          <GuideStep
-            number={3}
-            title={t("guide.step3.title")}
-            description={t("guide.step3.description")}
-          >
+          <GuideStep number={3} title={t("guide.step3.title")} description={t("guide.step3.description")}>
             <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600 space-y-1">
               <p>1. {isFrench ? "Cliquez sur" : "Click"} <strong>&quot;New application&quot;</strong></p>
               <p>2. {isFrench ? "Sélectionnez" : "Select"} <strong>&quot;Working Holiday&quot;</strong></p>
               <p>3. {isFrench ? "Choisissez la sous-classe" : "Choose subclass"} <strong>{visaType}</strong></p>
             </div>
           </GuideStep>
-
-          <GuideStep
-            number={4}
-            title={t("guide.step4.title")}
-            description={t("guide.step4.description")}
-          >
+          <GuideStep number={4} title={t("guide.step4.title")} description={t("guide.step4.description")}>
             <div className="space-y-2">
-              {fieldOrder
-                .filter((f) => result.fields[f])
-                .map((field) => (
-                  <div key={field} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <span className="text-xs text-gray-500">{visaApplicationMapping[field]}</span>
-                      <p className="text-sm font-mono font-medium text-gray-900">{result.fields[field]}</p>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => copyToClipboard(result.fields[field]!, field + "_guide")}
-                      className="gap-1.5 flex-shrink-0"
-                    >
-                      {copiedField === field + "_guide" ? (
-                        <Check className="h-3.5 w-3.5 text-green-600" />
-                      ) : (
-                        <Copy className="h-3.5 w-3.5" />
-                      )}
-                    </Button>
+              {(Object.keys(fields) as (keyof ExtractedFields)[]).filter((f) => fields[f]).map((f) => (
+                <div key={f} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs text-gray-500">{immiHints[f]}</p>
+                    <p className="text-sm font-mono font-semibold text-gray-900 truncate">{fields[f]}</p>
                   </div>
-                ))}
+                  <Button variant="ghost" size="sm" className="flex-shrink-0 gap-1.5"
+                    onClick={() => copyToClipboard(fields[f]!, f + "_g")}>
+                    {copiedField === f + "_g" ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+                  </Button>
+                </div>
+              ))}
             </div>
           </GuideStep>
-
-          <GuideStep
-            number={5}
-            title={t("guide.step5.title")}
-            description={t("guide.step5.description")}
-          >
+          <GuideStep number={5} title={t("guide.step5.title")} description={t("guide.step5.description")}>
             <div className="bg-blue-50 rounded-lg p-3 space-y-1.5">
               {[
                 isFrench ? "✅ Fiche de paie (payslip)" : "✅ Payslip",
                 isFrench ? "✅ Lettre d'employeur (si disponible)" : "✅ Employer letter (if available)",
                 isFrench ? "✅ Passeport (page photo + tampons)" : "✅ Passport (photo page + stamps)",
-                isFrench ? "✅ Extrait de casier judiciaire (si demandé)" : "✅ Police clearance (if requested)",
-              ].map((item, i) => (
-                <p key={i} className="text-sm text-blue-800">{item}</p>
-              ))}
+                isFrench ? "✅ Casier judiciaire (si demandé)" : "✅ Police clearance (if requested)",
+              ].map((item, i) => <p key={i} className="text-sm text-blue-800">{item}</p>)}
             </div>
           </GuideStep>
-
-          <GuideStep
-            number={6}
-            title={t("guide.step6.title")}
-            description={t("guide.step6.description")}
-          >
+          <GuideStep number={6} title={t("guide.step6.title")} description={t("guide.step6.description")}>
             <div className="flex gap-3 flex-wrap">
-              <a
-                href="https://www.abn.business.gov.au/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-                {isFrench ? "Vérifier un ABN" : "Verify ABN"}
+              <a href="https://www.abn.business.gov.au/" target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                <ExternalLink className="h-3.5 w-3.5" /> {isFrench ? "Vérifier un ABN" : "Verify ABN"}
               </a>
-              <a
-                href="https://www.fairwork.gov.au/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-                Fair Work Australia
+              <a href="https://www.fairwork.gov.au/" target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                <ExternalLink className="h-3.5 w-3.5" /> Fair Work Australia
               </a>
             </div>
           </GuideStep>
         </CardContent>
       </Card>
 
-      {/* Interactive checklist */}
+      {/* ── Interactive checklist ── */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -528,51 +705,30 @@ export function ResultsClient({
         </CardHeader>
         <CardContent>
           <ul className="space-y-3">
-            {(isFrench ? [
-              "J'ai mon TFN (Tax File Number)",
-              "Mon passeport est disponible (page photo + tampons d'entrée)",
-              "J'ai toutes mes fiches de paie sauvegardées",
-              "J'ai l'ABN de mon employeur",
-              "J'ai une lettre d'employeur (ou j'en ai fait la demande)",
-              "Je me suis connecté à ImmiAccount",
-              "J'ai vérifié mon éligibilité au travail spécifié (88 jours)",
-              "J'ai soumis ma demande de renouvellement WHV",
-            ] : [
-              "I have my TFN (Tax File Number)",
-              "My passport is available (photo page + entry stamps)",
-              "I have all my payslips saved",
-              "I have my employer's ABN",
-              "I have an employer letter (or have requested one)",
-              "I have logged into ImmiAccount",
-              "I have verified my specified work eligibility (88 days)",
-              "I have submitted my WHV renewal application",
-            ]).map((item, i) => (
+            {checklistItems.map((item, i) => (
               <li key={i} className="flex items-center gap-3">
                 <button
                   type="button"
                   onClick={() => setChecklist((prev) => ({ ...prev, [i]: !prev[i] }))}
-                  className={`flex-shrink-0 w-6 h-6 rounded border-2 flex items-center justify-center transition-colors ${
-                    checklist[i] ? "bg-green-500 border-green-500" : "border-gray-300 hover:border-green-400"
-                  }`}
+                  className={`flex-shrink-0 w-6 h-6 rounded border-2 flex items-center justify-center transition-colors ${checklist[i] ? "bg-green-500 border-green-500" : "border-gray-300 hover:border-green-400"}`}
                   aria-label={checklist[i] ? "Uncheck" : "Check"}
                 >
                   {checklist[i] && <Check className="h-3.5 w-3.5 text-white" />}
                 </button>
-                <span className={`text-sm ${checklist[i] ? "line-through text-gray-400" : "text-gray-700"}`}>
-                  {item}
-                </span>
+                <span className={`text-sm ${checklist[i] ? "line-through text-gray-400" : "text-gray-700"}`}>{item}</span>
               </li>
             ))}
           </ul>
-          <p className="mt-4 text-xs text-gray-400">
-            {isFrench
-              ? `${Object.values(checklist).filter(Boolean).length}/8 étapes complétées`
-              : `${Object.values(checklist).filter(Boolean).length}/8 steps completed`}
-          </p>
+          <div className="mt-4 flex items-center gap-2">
+            <div className="flex-1 bg-gray-200 rounded-full h-2">
+              <div className="bg-green-500 h-2 rounded-full transition-all" style={{ width: `${(checkedCount / checklistItems.length) * 100}%` }} />
+            </div>
+            <span className="text-xs text-gray-400">{checkedCount}/{checklistItems.length}</span>
+          </div>
         </CardContent>
       </Card>
 
-      {/* Official links */}
+      {/* ── Official links ── */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">{isFrench ? "Liens officiels" : "Official links"}</CardTitle>
@@ -582,17 +738,12 @@ export function ResultsClient({
             {[
               { label: `WHV ${visaType} Official Page`, href: visaUrl },
               { label: "ImmiAccount Login", href: "https://online.immi.gov.au/lusc/login" },
-              { label: "Specified Work Info", href: "https://immi.homeaffairs.gov.au/visas/getting-a-visa/visa-listing/work-holiday-417/specified-work" },
+              { label: "Specified Work Rules", href: "https://immi.homeaffairs.gov.au/visas/getting-a-visa/visa-listing/work-holiday-417/specified-work" },
               { label: "ABN Lookup", href: "https://www.abn.business.gov.au/" },
               { label: "Fair Work Australia", href: "https://www.fairwork.gov.au/" },
             ].map((link) => (
-              <a
-                key={link.href}
-                href={link.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 p-3 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition-colors"
-              >
+              <a key={link.href} href={link.href} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-2 p-3 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition-colors">
                 <ExternalLink className="h-4 w-4 text-blue-500 flex-shrink-0" />
                 {link.label}
               </a>
@@ -601,31 +752,33 @@ export function ResultsClient({
         </CardContent>
       </Card>
 
-      {/* Download CTA */}
+      {/* ── Download CTA ── */}
       <div className="flex flex-col sm:flex-row gap-3 pb-6">
         <Button size="lg" onClick={downloadPdf} disabled={isDownloadingPdf} className="gap-2 flex-1">
           <Download className="h-5 w-5" />
           {isDownloadingPdf ? t("download.generating") : t("download.pdf")}
         </Button>
         <p className="flex items-center gap-2 text-sm text-gray-500 sm:flex-1 justify-center">
-          <Mail className="h-4 w-4" />
-          {t("email.sent")} <strong>{email}</strong>
+          <Mail className="h-4 w-4" /> {t("email.sent")} <strong>{email}</strong>
         </p>
       </div>
     </div>
   );
 }
 
-function GuideStep({
-  number,
-  title,
-  description,
-  children,
-}: {
-  number: number;
-  title: string;
-  description: string;
-  children?: React.ReactNode;
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function SectionHeader({ icon, title }: { icon: string; title: string }) {
+  return (
+    <div className="flex items-center gap-2 px-5 py-2.5 bg-gray-50 border-y border-gray-100">
+      <span className="text-base">{icon}</span>
+      <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">{title}</span>
+    </div>
+  );
+}
+
+function GuideStep({ number, title, description, children }: {
+  number: number; title: string; description: string; children?: React.ReactNode;
 }) {
   return (
     <div className="flex gap-4">
