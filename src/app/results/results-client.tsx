@@ -35,6 +35,49 @@ interface ResultsClientProps {
   locale: string;
 }
 
+function generateEmployerEmail(
+  lang: "fr" | "en",
+  employerName: string,
+  fullName: string | null,
+  missingFields: string[]
+): string {
+  const name = fullName ?? (lang === "fr" ? "[Votre Prénom Nom]" : "[Your Full Name]");
+  const hasMissingDates = missingFields.some((f) => ["startDate", "hoursPerWeek", "grossIncome", "totalHours"].includes(f));
+  const hasMissingAbn = missingFields.includes("employerAbn");
+
+  if (lang === "fr") {
+    return `Objet : Documents requis — Renouvellement de Working Holiday Visa
+
+Bonjour,
+
+Je me permets de vous contacter concernant mon dossier de renouvellement de Working Holiday Visa (sous-classe 417/462) auprès du Department of Home Affairs australien.
+
+Pour compléter ma demande, j'ai besoin des documents suivants :
+${hasMissingDates ? "• Mes fiches de paie couvrant l'intégralité de ma période d'emploi (avec dates de début/fin, heures travaillées par semaine et revenu brut)\n" : ""}${hasMissingAbn || !hasMissingDates ? "• Une lettre d'employeur confirmant : ma période d'emploi exacte, mon titre de poste, mes heures hebdomadaires moyennes, et l'ABN de votre entreprise\n" : ""}
+Ces documents sont indispensables pour prouver mon expérience de travail régional auprès des autorités d'immigration australiennes.
+
+Je vous remercie par avance pour votre aide et reste disponible pour toute question.
+
+Cordialement,
+${name}`;
+  }
+
+  return `Subject: Employment documents required — Working Holiday Visa renewal
+
+Dear ${employerName} team,
+
+I am writing to request employment documents for my Working Holiday Visa (subclass 417/462) renewal application with the Australian Department of Home Affairs.
+
+To complete my application, I need the following:
+${hasMissingDates ? "• Payslips covering my full period of employment (with start/end dates, weekly hours worked, and gross income)\n" : ""}${hasMissingAbn || !hasMissingDates ? "• An employer letter confirming: my exact employment period, job title, average weekly hours, and your company's ABN\n" : ""}
+These documents are required to verify my regional work experience with Australian immigration authorities.
+
+Thank you in advance for your assistance. Please don't hesitate to contact me if you have any questions.
+
+Kind regards,
+${name}`;
+}
+
 const FIELD_ICONS: Partial<Record<keyof ExtractedFields, React.ReactNode>> = {
   fullName: <User className="h-4 w-4" />,
   employerName: <Building2 className="h-4 w-4" />,
@@ -62,10 +105,12 @@ export function ResultsClient({
   locale,
 }: ResultsClientProps) {
   const t = useTranslations("results");
+  const isFrench = language === "fr" || locale === "fr";
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
-
-  const isFrench = language === "fr" || locale === "fr";
+  const [checklist, setChecklist] = useState<Record<string, boolean>>({});
+  const [emailLang, setEmailLang] = useState<"fr" | "en">(isFrench ? "fr" : "en");
+  const [emailCopied, setEmailCopied] = useState(false);
 
   const fieldLabels: Record<keyof ExtractedFields, string> = {
     fullName: t("fields.fullName"),
@@ -294,6 +339,52 @@ export function ResultsClient({
         </div>
       )}
 
+      {/* Employer email generator */}
+      {result.fields.employerName && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Mail className="h-5 w-5 text-blue-600" />
+              {isFrench ? "Email à envoyer à l'employeur" : "Email to send to your employer"}
+            </CardTitle>
+            <p className="text-sm text-gray-500">
+              {isFrench
+                ? "Utilisez ce modèle pour demander vos fiches de paie ou une lettre d'employeur."
+                : "Use this template to request missing payslips or an employer letter."}
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex gap-2">
+              <button
+                onClick={() => setEmailLang("fr")}
+                className={`px-3 py-1 rounded-md text-sm font-medium border transition-colors ${emailLang === "fr" ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200 hover:border-blue-300"}`}
+              >🇫🇷 Français</button>
+              <button
+                onClick={() => setEmailLang("en")}
+                className={`px-3 py-1 rounded-md text-sm font-medium border transition-colors ${emailLang === "en" ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200 hover:border-blue-300"}`}
+              >🇬🇧 English</button>
+            </div>
+            <pre className="whitespace-pre-wrap text-sm bg-gray-50 rounded-lg p-4 border border-gray-200 font-sans leading-relaxed text-gray-800">
+              {generateEmployerEmail(emailLang, result.fields.employerName, result.fields.fullName, result.missing_fields)}
+            </pre>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={async () => {
+                await navigator.clipboard.writeText(
+                  generateEmployerEmail(emailLang, result.fields.employerName!, result.fields.fullName, result.missing_fields)
+                );
+                setEmailCopied(true);
+                setTimeout(() => setEmailCopied(false), 2000);
+              }}
+            >
+              {emailCopied ? <><Check className="h-4 w-4 text-green-600" />{isFrench ? "Copié !" : "Copied!"}</> : <><Copy className="h-4 w-4" />{isFrench ? "Copier l'email" : "Copy email"}</>}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Step-by-step guide */}
       <Card>
         <CardHeader>
@@ -421,6 +512,63 @@ export function ResultsClient({
               </a>
             </div>
           </GuideStep>
+        </CardContent>
+      </Card>
+
+      {/* Interactive checklist */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <CheckCircle2 className="h-5 w-5 text-green-600" />
+            {isFrench ? "Ma checklist de renouvellement" : "My renewal checklist"}
+          </CardTitle>
+          <p className="text-sm text-gray-500">
+            {isFrench ? "Cochez chaque étape au fur et à mesure." : "Tick each item as you go."}
+          </p>
+        </CardHeader>
+        <CardContent>
+          <ul className="space-y-3">
+            {(isFrench ? [
+              "J'ai mon TFN (Tax File Number)",
+              "Mon passeport est disponible (page photo + tampons d'entrée)",
+              "J'ai toutes mes fiches de paie sauvegardées",
+              "J'ai l'ABN de mon employeur",
+              "J'ai une lettre d'employeur (ou j'en ai fait la demande)",
+              "Je me suis connecté à ImmiAccount",
+              "J'ai vérifié mon éligibilité au travail spécifié (88 jours)",
+              "J'ai soumis ma demande de renouvellement WHV",
+            ] : [
+              "I have my TFN (Tax File Number)",
+              "My passport is available (photo page + entry stamps)",
+              "I have all my payslips saved",
+              "I have my employer's ABN",
+              "I have an employer letter (or have requested one)",
+              "I have logged into ImmiAccount",
+              "I have verified my specified work eligibility (88 days)",
+              "I have submitted my WHV renewal application",
+            ]).map((item, i) => (
+              <li key={i} className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setChecklist((prev) => ({ ...prev, [i]: !prev[i] }))}
+                  className={`flex-shrink-0 w-6 h-6 rounded border-2 flex items-center justify-center transition-colors ${
+                    checklist[i] ? "bg-green-500 border-green-500" : "border-gray-300 hover:border-green-400"
+                  }`}
+                  aria-label={checklist[i] ? "Uncheck" : "Check"}
+                >
+                  {checklist[i] && <Check className="h-3.5 w-3.5 text-white" />}
+                </button>
+                <span className={`text-sm ${checklist[i] ? "line-through text-gray-400" : "text-gray-700"}`}>
+                  {item}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-4 text-xs text-gray-400">
+            {isFrench
+              ? `${Object.values(checklist).filter(Boolean).length}/8 étapes complétées`
+              : `${Object.values(checklist).filter(Boolean).length}/8 steps completed`}
+          </p>
         </CardContent>
       </Card>
 

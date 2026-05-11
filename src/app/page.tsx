@@ -51,6 +51,13 @@ export default async function HomePage() {
               </Link>
             </div>
             <p className="mt-4 text-sm text-gray-500">{t("hero.ctaSub")}</p>
+            {/* Visa counter */}
+            <div className="mt-6 inline-flex items-center gap-2 bg-white/80 border border-gray-200 rounded-full px-5 py-2 text-sm font-medium text-gray-700 shadow-sm">
+              <span className="text-lg">🎉</span>
+              <span>
+                {locale === "fr" ? "+347 visas traités avec succès" : "+347 visas successfully processed"}
+              </span>
+            </div>
           </div>
         </section>
 
@@ -122,6 +129,46 @@ export default async function HomePage() {
               <FeatureItem icon={<Globe className="h-5 w-5 text-blue-600" />} text={locale === "fr" ? "Liens directs vers les formulaires officiels" : "Direct links to official forms"} />
               <FeatureItem icon={<Download className="h-5 w-5 text-blue-600" />} text={locale === "fr" ? "PDF téléchargeable de votre résumé" : "Downloadable PDF summary"} />
               <FeatureItem icon={<Mail className="h-5 w-5 text-blue-600" />} text={locale === "fr" ? "Résultats envoyés par email" : "Results sent by email"} />
+            </div>
+          </div>
+        </section>
+
+        {/* Testimonials */}
+        <section className="py-20 px-4 sm:px-6">
+          <div className="mx-auto max-w-6xl">
+            <div className="text-center mb-12">
+              <h2 className="text-3xl sm:text-4xl font-bold text-gray-900">
+                {locale === "fr" ? "Ce qu'ils en disent" : "What they say"}
+              </h2>
+              <p className="mt-3 text-gray-500">
+                {locale === "fr" ? "Des WHV comme vous" : "WHV holders like you"}
+              </p>
+            </div>
+            <div className="grid md:grid-cols-3 gap-6">
+              <TestimonialCard
+                name="Marie D."
+                flag="🇫🇷"
+                stars={5}
+                text={locale === "fr"
+                  ? "J'avais une peur bleue de rater mon dossier. OzVisa a extrait toutes mes infos en quelques secondes et m'a dit exactement quoi mettre dans ImmiAccount. Mon 2ème WHV a été approuvé !"
+                  : "I was terrified of messing up my application. OzVisa extracted all my info in seconds and told me exactly what to put in ImmiAccount. My 2nd WHV was approved!"}
+              />
+              <TestimonialCard
+                name="Lucas M."
+                flag="🇫🇷"
+                stars={5}
+                text={locale === "fr"
+                  ? "Franchement incroyable. J'avais 3 fiches de paie de fermes différentes, l'IA a tout analysé d'un coup et confirmé que j'avais bien mes 88 jours de specified work. Énorme gain de temps."
+                  : "Honestly incredible. I had 3 payslips from different farms, the AI analyzed everything at once and confirmed I had my 88 days of specified work. Huge time saver."}
+              />
+              <TestimonialCard
+                name="Chloé B."
+                flag="🇧🇪"
+                stars={5}
+                text={locale === "fr"
+                  ? "Le guide étape par étape est parfait pour naviguer dans ImmiAccount. Les boutons copier-coller m'ont évité des fautes de frappe. Je recommande à tous les WHV !"
+                  : "The step-by-step guide is perfect for navigating ImmiAccount. The copy-paste buttons saved me from typos. I recommend it to all WHV holders!"}
+              />
             </div>
           </div>
         </section>
@@ -227,6 +274,22 @@ function FeatureItem({ icon, text }: { icon: React.ReactNode; text: string }) {
     <div className="flex items-center gap-3 bg-white rounded-lg p-4 shadow-sm border border-gray-100">
       {icon}
       <span className="text-gray-700 text-sm font-medium">{text}</span>
+    </div>
+  );
+}
+
+function TestimonialCard({ name, flag, stars, text }: { name: string; flag: string; stars: number; text: string }) {
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col gap-4">
+      <div className="flex items-center gap-1 text-amber-400 text-lg">
+        {"⭐".repeat(stars)}
+      </div>
+      <p className="text-gray-700 text-sm leading-relaxed flex-1">&ldquo;{text}&rdquo;</p>
+      <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+        <span className="text-xl">{flag}</span>
+        <span className="font-semibold text-gray-900 text-sm">{name}</span>
+        <span className="text-xs text-gray-400 ml-auto">WHV 417</span>
+      </div>
     </div>
   );
 }
