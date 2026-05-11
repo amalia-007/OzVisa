@@ -8,7 +8,7 @@ export function Footer() {
             <span className="font-bold text-gray-900">OzVisa</span>
           </div>
           <div className="text-sm text-gray-500 text-center">
-            <p>Powered by Claude AI · Secure payments via Stripe</p>
+            <p>Secure payments via Stripe</p>
             <p className="mt-1">
               Not affiliated with the Australian Government ·{" "}
               <a
