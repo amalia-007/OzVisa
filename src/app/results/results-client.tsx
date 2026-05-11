@@ -288,20 +288,27 @@ function PayslipCard({
       {open && (
         <div className="divide-y divide-gray-50">
           {[
-            { label: isFrench ? "Période de paie" : "Pay period", value: payslip.payPeriodStart && payslip.payPeriodEnd ? `${payslip.payPeriodStart} → ${payslip.payPeriodEnd}` : null, icon: <Calendar className="h-4 w-4" />, f: "period" },
-            { label: isFrench ? "Heures travaillées" : "Hours worked", value: payslip.hoursWorked, icon: <Clock className="h-4 w-4" />, f: "hours" },
-            { label: isFrench ? "Salaire brut" : "Gross pay", value: payslip.grossPay, icon: <DollarSign className="h-4 w-4" />, f: "gross" },
-            { label: isFrench ? "Titre du poste" : "Job title", value: payslip.jobTitle, icon: <Briefcase className="h-4 w-4" />, f: "title" },
-            { label: "ABN", value: payslip.employerAbn, icon: <Building2 className="h-4 w-4" />, f: "abn" },
-            { label: isFrench ? "Code postal / État" : "Postcode / State", value: [payslip.postcode, payslip.state].filter(Boolean).join(", ") || null, icon: <MapPin className="h-4 w-4" />, f: "loc" },
-            { label: isFrench ? "Secteur" : "Industry", value: payslip.industry, icon: <Briefcase className="h-4 w-4" />, f: "ind" },
-          ].map(({ label, value, icon, f }) =>
+            { label: isFrench ? "Période de paie" : "Pay period", value: payslip.payPeriodStart && payslip.payPeriodEnd ? `${payslip.payPeriodStart} → ${payslip.payPeriodEnd}` : null, icon: <Calendar className="h-4 w-4" />, f: "period", isJobTitle: false },
+            { label: isFrench ? "Heures travaillées" : "Hours worked", value: payslip.hoursWorked, icon: <Clock className="h-4 w-4" />, f: "hours", isJobTitle: false },
+            { label: isFrench ? "Salaire brut" : "Gross pay", value: payslip.grossPay, icon: <DollarSign className="h-4 w-4" />, f: "gross", isJobTitle: false },
+            { label: isFrench ? "Titre du poste" : "Job title", value: payslip.jobTitle, icon: <Briefcase className="h-4 w-4" />, f: "title", isJobTitle: true },
+            { label: "ABN", value: payslip.employerAbn, icon: <Building2 className="h-4 w-4" />, f: "abn", isJobTitle: false },
+            { label: isFrench ? "Code postal / État" : "Postcode / State", value: [payslip.postcode, payslip.state].filter(Boolean).join(", ") || null, icon: <MapPin className="h-4 w-4" />, f: "loc", isJobTitle: false },
+            { label: isFrench ? "Secteur" : "Industry", value: payslip.industry, icon: <Briefcase className="h-4 w-4" />, f: "ind", isJobTitle: false },
+          ].map(({ label, value, icon, f, isJobTitle }) =>
             value ? (
               <div key={f} className="flex items-center gap-3 px-4 py-2.5 bg-white">
                 <span className="text-gray-400 flex-shrink-0">{icon}</span>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs text-gray-400">{label}</p>
-                  <p className="text-sm font-mono font-semibold text-gray-900 truncate">{value}</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-mono font-semibold text-gray-900">{value}</p>
+                    {isJobTitle && employerQualifies === false && (
+                      <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-bold flex-shrink-0">
+                        ❌ {isFrench ? "non qualifiant" : "non-qualifying"}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <button
                   onClick={() => onCopy(value!, key(f))}
@@ -436,7 +443,7 @@ export function ResultsClient({
   const daysToGo2nd = Math.max(0, TARGET_2ND - totalDays);
   const pct2nd = Math.min(100, Math.round((totalDays / TARGET_2ND) * 100));
   const barColor = pct2nd >= 100 ? "bg-green-500" : pct2nd >= 80 ? "bg-yellow-400" : pct2nd >= 33 ? "bg-orange-400" : "bg-red-400";
-  const daysTextColor = pct2nd >= 100 ? "text-green-700" : pct2nd >= 80 ? "text-yellow-700" : pct2nd >= 33 ? "text-orange-700" : "text-red-700";
+  const daysTextColor = totalDays > 0 ? "text-green-700" : "text-red-500";
 
   // Verdict labels
   const verdictConfig: Record<VerdictKey, { icon: string; bgClass: string; borderClass: string; titleClass: string; title: string }> = {
@@ -609,9 +616,7 @@ export function ResultsClient({
                       <p className="text-xs">
                         {e.employer.specified_work_eligible === true
                           ? (isFrench ? "✅ qualifié" : "✅ qualifies")
-                          : e.employer.specified_work_eligible === false
-                          ? (isFrench ? "❌ non qualifié" : "❌ non-qualifying")
-                          : (isFrench ? "❓ à vérifier" : "❓ to check")}
+                          : (isFrench ? "❌ non qualifié" : "❌ non-qualifying")}
                       </p>
                     </div>
                   </div>
@@ -671,9 +676,7 @@ export function ResultsClient({
                     <p className="text-xs text-gray-600">
                       {emp.specified_work_eligible === true
                         ? (isFrench ? "✅ Qualifie comme travail spécifié" : "✅ Qualifies as specified work")
-                        : emp.specified_work_eligible === false
-                        ? (isFrench ? "❌ Ne qualifie pas comme travail spécifié" : "❌ Does not qualify as specified work")
-                        : (isFrench ? "❓ À vérifier avec l'immigration" : "❓ To verify with immigration")}
+                        : (isFrench ? "❌ Ne qualifie pas comme travail spécifié" : "❌ Does not qualify as specified work")}
                     </p>
                     {emp.postcode && (
                       <p className="text-xs text-gray-500 mt-1">
@@ -709,9 +712,6 @@ export function ResultsClient({
             <FileText className="h-5 w-5 text-blue-600" />
             {t("extractedData.title")}
           </CardTitle>
-          <p className="text-xs text-gray-400">
-            {isFrench ? "⚠️ = valeur à faible confiance — vérifiez manuellement" : "⚠️ = low confidence field — verify manually"}
-          </p>
         </CardHeader>
         <CardContent className="p-4 space-y-2">
 
@@ -745,11 +745,11 @@ export function ResultsClient({
                     <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
                       ✅ {isFrench ? "travail qualifiant" : "qualifying work"}
                     </span>
-                  ) : emp.specified_work_eligible === false ? (
+                  ) : (
                     <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">
                       ❌ {isFrench ? "non qualifiant" : "non-qualifying"}
                     </span>
-                  ) : null}
+                  )}
                 </div>
 
                 {emp.payslips && emp.payslips.length > 0 ? (
@@ -848,21 +848,30 @@ export function ResultsClient({
       </Card>
 
       {/* ── Missing fields notice ── */}
-      {missing_fields.length > 0 && (
-        <div className="p-4 bg-yellow-50 rounded-xl border border-yellow-200 flex items-start gap-3">
-          <AlertCircle className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="font-medium text-yellow-800 text-sm">
-              {isFrench ? "Champs non extraits" : "Fields not extracted"}
-            </p>
-            <p className="text-sm text-yellow-700 mt-1">
-              {missing_fields.map((f) => fieldLabels[f as keyof ExtractedFields] || f).join(", ")}
-              {" — "}
-              {isFrench ? "à saisir manuellement dans ImmiAccount." : "enter these manually in ImmiAccount."}
-            </p>
+      {(() => {
+        const anyPayslipHasJobTitle = employers.some(
+          (emp) => emp.jobTitle || emp.payslips?.some((p) => p.jobTitle)
+        );
+        const filteredMissing = missing_fields.filter((f) => {
+          if (f === "jobTitle" && (anyPayslipHasJobTitle || employers.length > 0)) return false;
+          return true;
+        });
+        return filteredMissing.length > 0 ? (
+          <div className="p-4 bg-yellow-50 rounded-xl border border-yellow-200 flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium text-yellow-800 text-sm">
+                {isFrench ? "Champs non extraits" : "Fields not extracted"}
+              </p>
+              <p className="text-sm text-yellow-700 mt-1">
+                {filteredMissing.map((f) => fieldLabels[f as keyof ExtractedFields] || f).join(", ")}
+                {" — "}
+                {isFrench ? "à saisir manuellement dans ImmiAccount." : "enter these manually in ImmiAccount."}
+              </p>
+            </div>
           </div>
-        </div>
-      )}
+        ) : null;
+      })()}
 
       {/* ── Employer email generator ── */}
       {fields.employerName && (

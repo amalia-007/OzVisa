@@ -23,6 +23,30 @@ CRITICAL RULES:
 - grossPay = the gross pay for THIS specific pay period (NOT year-to-date)
 - payPeriodStart and payPeriodEnd MUST be in DD/MM/YYYY format
 
+POSTCODE EXTRACTION — CRITICAL:
+- Extract the postcode of WHERE THE WORK WAS PHYSICALLY PERFORMED, NOT the employer's registered office or billing address
+- Look for: work site address, job site, branch address, deployed location, site location, work location, or any field indicating where the employee actually worked
+- For labour hire companies (e.g. "People Hire", "Workforce", "Labour Solutions", "Staffing"), the work location is ALWAYS the client/site address — look for a site name, mine name, property name, farm name, or client location
+- For farm/orchard work: the farm or orchard address/postcode is the work location
+- For mine site work: the mine site postcode is the work location (NOT the company's Perth/city office)
+- If you can only find the employer's company registered address or head office (typically a city address) and cannot determine the actual work site, set postcode to null — do NOT use the HQ address as work location
+
+INDUSTRY CLASSIFICATION — use these exact categories for WHV specified work:
+- Orchard work, fruit picking, vegetable picking, farm work → classify as "horticulture"
+- Any farm/agricultural work (crops, dairy, livestock, poultry, vineyard, beekeeping) → classify as "agriculture"
+- Security/labour hire working ON A MINE SITE → classify as "mining"
+- Fishing boats, aquaculture, pearl farming → classify as "fishing and pearling"
+- Logging, tree planting, forestry → classify as "tree farming and felling"
+- Road, civil, building works → classify as "construction"
+- Hotel, bar, cafe, kitchen work → classify as "hospitality"
+- When in doubt for farm-adjacent work: lean toward the most specific qualifying category
+
+CONFIDENCE SCORES — be confident:
+- Australian payslips have standardised formats; if the value is clearly printed, use 0.9+
+- If the same information appears consistently across multiple payslips from the same employer, use 0.95+
+- Only use <0.7 if the field is genuinely ambiguous, partially obscured, or inferred rather than explicitly stated
+- postcode: use 0.9 if you found an explicit site/work location address; use 0.5 if you are deriving it; use null if you cannot determine work location (NOT employer HQ)
+
 Return a JSON object with EXACTLY this structure:
 {
   "fullName": "string or null (applicant's full name, same across all documents)",
@@ -37,9 +61,9 @@ Return a JSON object with EXACTLY this structure:
       "employerAbn": "string or null (format: XX XXX XXX XXX)",
       "jobTitle": "string or null",
       "employmentType": "casual | part-time | full-time | null",
-      "postcode": "string or null (4-digit Australian postcode of work location)",
+      "postcode": "string or null (4-digit postcode of WORK SITE — null if only employer HQ visible)",
       "state": "QLD | NSW | VIC | SA | WA | TAS | NT | ACT | null",
-      "industry": "string or null (e.g. agriculture, horticulture, construction, hospitality)"
+      "industry": "string or null — use WHV categories: agriculture, horticulture, mining, construction, fishing and pearling, tree farming and felling, hospitality, retail, etc."
     }
   ],
   "confidence_scores": {
@@ -55,14 +79,12 @@ Return a JSON object with EXACTLY this structure:
     "state": 0.0-1.0,
     "industry": 0.0-1.0
   },
-  "missing_fields": ["list of field names absent from all documents"],
+  "missing_fields": ["list of field names absent from ALL documents"],
   "raw_text": "brief summary of all documents"
 }
 
 Additional guidelines:
-- Be conservative with confidence scores — only use >0.9 if the value is explicitly stated
 - For ABN: look for "ABN" followed by 11 digits, format as "XX XXX XXX XXX"
-- For industry: agriculture, horticulture, viticulture, aquaculture, fishing, pearling, tree felling/farming, mining, construction are WHV specified work categories
 - For payPeriodStart/End: if only one date is shown, use it for both start and end
 - ALWAYS return at least one entry in payslips even if data is incomplete
 - Return ONLY valid JSON — no markdown, no explanation`;
