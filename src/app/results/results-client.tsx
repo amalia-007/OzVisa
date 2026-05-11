@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import type { AnalysisResult, ExtractedFields } from "@/lib/supabase";
+import type { AnalysisResult, ExtractedFields, EmployerData } from "@/lib/supabase";
 import {
   CheckCircle2,
   XCircle,
@@ -43,20 +43,138 @@ function parseNumber(s: string | null): number | null {
   return isNaN(n) ? null : n;
 }
 
-function estimateQualifyingDays(result: AnalysisResult): { days: number | null; isEstimate: boolean; note: string } {
-  const { fields } = result;
-  const totalH = parseNumber(fields.totalHours);
-  const hpw = parseNumber(fields.hoursPerWeek);
+function parseDateDDMMYYYY(dateStr: string): Date | null {
+  const match = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!match) return null;
+  const d = new Date(parseInt(match[3]), parseInt(match[2]) - 1, parseInt(match[1]));
+  return isNaN(d.getTime()) ? null : d;
+}
 
+type DaysEstimate = { days: number; isEstimate: boolean; note: string };
+
+function estimateDaysForEmployer(
+  emp: {
+    totalHours: string | null;
+    hoursPerWeek: string | null;
+    startDate: string | null;
+    endDate?: string | null;
+    specified_work_eligible: boolean | null;
+  },
+  isFrench: boolean
+): DaysEstimate {
+  // Non-qualifying work = 0 days
+  if (emp.specified_work_eligible !== true) {
+    return { days: 0, isEstimate: false, note: "" };
+  }
+
+  const totalH = parseNumber(emp.totalHours);
+  const hpw = parseNumber(emp.hoursPerWeek);
+
+  // Method 1: totalHours ÷ hoursPerWeek × 7 (only if avg ≥ 35 h/week)
   if (totalH !== null && hpw !== null && hpw > 0) {
-    const weeks = totalH / hpw;
+    if (hpw >= 35) {
+      const weeks = totalH / hpw;
+      return {
+        days: Math.round(weeks * 7),
+        isEstimate: true,
+        note: isFrench
+          ? `Estimation : ${emp.totalHours}h ÷ ${emp.hoursPerWeek}h/sem × 7`
+          : `Estimate: ${emp.totalHours}h ÷ ${emp.hoursPerWeek}h/week × 7`,
+      };
+    }
     return {
-      days: Math.round(weeks * 7),
-      isEstimate: true,
-      note: `Based on ${fields.totalHours} total hours ÷ ${fields.hoursPerWeek} h/week`,
+      days: 0,
+      isEstimate: false,
+      note: isFrench
+        ? `${hpw}h/sem < 35h minimum requis`
+        : `${hpw}h/week < 35h minimum required`,
     };
   }
-  return { days: null, isEstimate: false, note: "" };
+
+  // Method 2: date range (only if avg ≥ 35 h/week)
+  if (emp.startDate && hpw !== null && hpw >= 35) {
+    const start = parseDateDDMMYYYY(emp.startDate);
+    if (start) {
+      const end = emp.endDate ? (parseDateDDMMYYYY(emp.endDate) ?? new Date()) : new Date();
+      if (end > start) {
+        const calDays = Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000));
+        return {
+          days: calDays,
+          isEstimate: true,
+          note: isFrench
+            ? `Estimation : ${emp.startDate} → ${emp.endDate ?? "aujourd'hui"}`
+            : `Estimate: ${emp.startDate} → ${emp.endDate ?? "today"}`,
+        };
+      }
+    }
+  }
+
+  // Fallback: can't calculate → 0 (not "?")
+  return { days: 0, isEstimate: false, note: "" };
+}
+
+type BreakdownEntry = {
+  name: string | null;
+  jobTitle: string | null;
+  postcode: string | null;
+  state: string | null;
+  industry: string | null;
+  eligible: boolean | null;
+  reason: string;
+  days: number;
+  isEstimate: boolean;
+  note: string;
+};
+
+function buildBreakdowns(result: AnalysisResult, isFrench: boolean): BreakdownEntry[] {
+  const employers: EmployerData[] = result.employers ?? [];
+
+  if (employers.length > 0) {
+    return employers.map((emp) => {
+      const { days, isEstimate, note } = estimateDaysForEmployer(emp, isFrench);
+      return {
+        name: emp.employerName,
+        jobTitle: emp.jobTitle,
+        postcode: emp.postcode,
+        state: emp.state,
+        industry: emp.industry,
+        eligible: emp.specified_work_eligible,
+        reason: isFrench
+          ? (emp.specified_work_reason_fr ?? emp.specified_work_reason)
+          : emp.specified_work_reason,
+        days,
+        isEstimate,
+        note,
+      };
+    });
+  }
+
+  // Single-employer fallback (old DB records without employers array)
+  const { fields, specified_work_eligible } = result;
+  const est = estimateDaysForEmployer(
+    {
+      totalHours: fields.totalHours,
+      hoursPerWeek: fields.hoursPerWeek,
+      startDate: fields.startDate,
+      endDate: null,
+      specified_work_eligible,
+    },
+    isFrench
+  );
+  return [
+    {
+      name: fields.employerName,
+      jobTitle: fields.jobTitle,
+      postcode: fields.postcode,
+      state: fields.state,
+      industry: fields.industry,
+      eligible: specified_work_eligible,
+      reason: isFrench
+        ? (result.specified_work_reason_fr ?? result.specified_work_reason)
+        : result.specified_work_reason,
+      ...est,
+    },
+  ];
 }
 
 function generateEmployerEmail(
@@ -114,6 +232,7 @@ function FieldRow({
   confidence,
   copiedKey,
   onCopy,
+  isFrench,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -122,6 +241,7 @@ function FieldRow({
   confidence: number;
   copiedKey: string;
   onCopy: (v: string, k: string) => void;
+  isFrench?: boolean;
 }) {
   const missing = !value;
   const lowConfidence = !missing && confidence < 0.5;
@@ -133,7 +253,10 @@ function FieldRow({
         <div className="flex items-center gap-1.5 mb-0.5">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{label}</p>
           {lowConfidence && (
-            <span title="Please verify this field manually" className="cursor-help text-amber-500">
+            <span
+              title={isFrench ? "Vérifiez ce champ manuellement" : "Please verify this field manually"}
+              className="cursor-help text-amber-500"
+            >
               ⚠️
             </span>
           )}
@@ -149,12 +272,12 @@ function FieldRow({
         <button
           onClick={() => onCopy(value!, copiedKey)}
           className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition-colors text-xs font-medium mt-0.5"
-          title="Copy"
+          title={isFrench ? "Copier" : "Copy"}
         >
           {copiedKey === "copied" ? (
             <><Check className="h-3.5 w-3.5 text-green-600" /> <span className="text-green-600">✓</span></>
           ) : (
-            <><Copy className="h-3.5 w-3.5" /> Copy</>
+            <><Copy className="h-3.5 w-3.5" /> {isFrench ? "Copier" : "Copy"}</>
           )}
         </button>
       )}
@@ -246,23 +369,24 @@ export function ResultsClient({
     ? "https://immi.homeaffairs.gov.au/visas/getting-a-visa/visa-listing/work-holiday-417"
     : "https://immi.homeaffairs.gov.au/visas/getting-a-visa/visa-listing/work-and-holiday-462";
 
-  // Days counter
+  // ── Days calculation (multi-employer) ──
   const TARGET_DAYS_2ND = 88;
   const TARGET_DAYS_3RD = 179;
-  const { days: estimatedDays, isEstimate, note: daysNote } = estimateQualifyingDays(result);
-  const isEligible2nd = specified_work_eligible === true;
-  const daysToGo2nd = estimatedDays !== null ? Math.max(0, TARGET_DAYS_2ND - estimatedDays) : null;
-  const pct = estimatedDays !== null ? Math.min(100, Math.round((estimatedDays / TARGET_DAYS_2ND) * 100)) : null;
-  const barColor = pct === null ? "bg-gray-300"
-    : pct >= 100 ? "bg-green-500"
-    : pct >= 80 ? "bg-yellow-400"
-    : pct >= 33 ? "bg-orange-400"
-    : "bg-red-400";
-  const barTextColor = pct === null ? "text-gray-500"
-    : pct >= 100 ? "text-green-700"
-    : pct >= 80 ? "text-yellow-700"
-    : pct >= 33 ? "text-orange-700"
-    : "text-red-700";
+
+  const breakdowns = buildBreakdowns(result, isFrench);
+  const totalDays = breakdowns.reduce((s, e) => s + e.days, 0);
+  const hasEstimate = breakdowns.some((e) => e.isEstimate);
+  const daysNotes = breakdowns.filter((e) => e.note).map((e) => e.note);
+
+  const daysToGo2nd = Math.max(0, TARGET_DAYS_2ND - totalDays);
+  const pct = Math.min(100, Math.round((totalDays / TARGET_DAYS_2ND) * 100));
+  const barColor = pct >= 100 ? "bg-green-500" : pct >= 80 ? "bg-yellow-400" : pct >= 33 ? "bg-orange-400" : "bg-red-400";
+  const barTextColor = pct >= 100 ? "text-green-700" : pct >= 80 ? "text-yellow-700" : pct >= 33 ? "text-orange-700" : "text-red-700";
+
+  // Top-level verdict reason (FR-aware)
+  const verdictReason = isFrench
+    ? (result.specified_work_reason_fr ?? specified_work_reason)
+    : specified_work_reason;
 
   // Checklist items
   const checklistItems = isFrench ? [
@@ -317,7 +441,7 @@ export function ResultsClient({
           {/* Counter display */}
           <div className="flex items-end gap-3 mb-3">
             <span className={`text-5xl font-bold tabular-nums ${barTextColor}`}>
-              {estimatedDays !== null ? estimatedDays : "?"}
+              {totalDays}
             </span>
             <span className="text-2xl text-gray-400 font-light mb-1">/ {TARGET_DAYS_2ND}</span>
             <span className="text-sm text-gray-500 mb-2">
@@ -329,7 +453,7 @@ export function ResultsClient({
           <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden mb-2">
             <div
               className={`h-4 rounded-full transition-all duration-500 ${barColor}`}
-              style={{ width: pct !== null ? `${pct}%` : "0%" }}
+              style={{ width: `${pct}%` }}
             />
           </div>
           <div className="flex justify-between text-xs text-gray-400 mb-4">
@@ -339,57 +463,77 @@ export function ResultsClient({
           </div>
 
           {/* Status line */}
-          {estimatedDays !== null ? (
-            daysToGo2nd === 0 ? (
-              <p className="text-sm font-semibold text-green-700">
-                ✅ {isFrench ? "Vous avez atteint les 88 jours requis pour le 2ème WHV." : "You have reached the 88 days required for your 2nd WHV."}
-              </p>
-            ) : (
-              <p className="text-sm font-semibold text-orange-700">
-                ⏳ {isFrench
-                  ? `Il vous manque encore ${daysToGo2nd} jours pour atteindre les 88 jours requis.`
-                  : `You still need ${daysToGo2nd} more days to reach the required 88 days.`}
-              </p>
-            )
+          {daysToGo2nd === 0 ? (
+            <p className="text-sm font-semibold text-green-700">
+              ✅ {isFrench ? "Vous avez atteint les 88 jours requis pour le 2ème WHV." : "You have reached the 88 days required for your 2nd WHV."}
+            </p>
+          ) : totalDays > 0 ? (
+            <p className="text-sm font-semibold text-orange-700">
+              ⏳ {isFrench
+                ? `Il vous manque encore ${daysToGo2nd} jours pour atteindre les 88 jours requis.`
+                : `You still need ${daysToGo2nd} more days to reach the required 88 days.`}
+            </p>
           ) : (
             <p className="text-sm text-gray-500">
               {isFrench
-                ? "Impossible d'estimer automatiquement — fournissez une fiche de paie avec le total d'heures et le nombre d'heures par semaine."
-                : "Cannot estimate automatically — provide a payslip showing total hours and hours per week."}
+                ? "Impossible d'estimer automatiquement — fournissez une fiche de paie avec le total d'heures et les heures par semaine (≥ 35h)."
+                : "Cannot estimate automatically — provide a payslip showing total hours and hours per week (≥ 35h)."}
             </p>
           )}
 
-          {/* Breakdown */}
-          {(fields.employerName || fields.jobTitle) && (
-            <div className="mt-4 pt-4 border-t border-blue-100">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                {isFrench ? "Détail par employeur" : "Breakdown by employer"}
-              </p>
-              <div className={`flex items-center gap-3 p-3 rounded-lg ${specified_work_eligible === true ? "bg-green-50 border border-green-200" : specified_work_eligible === false ? "bg-red-50 border border-red-200" : "bg-gray-50 border border-gray-200"}`}>
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-gray-900">
-                    {fields.employerName ?? "—"}{fields.jobTitle ? ` · ${fields.jobTitle}` : ""}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {fields.state ?? ""}{fields.postcode ? ` ${fields.postcode}` : ""}
-                    {fields.industry ? ` · ${fields.industry}` : ""}
-                  </p>
+          {/* Employer breakdown — all employers */}
+          <div className="mt-4 pt-4 border-t border-blue-100">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+              {isFrench ? "Détail par employeur" : "Breakdown by employer"}
+            </p>
+            <div className="space-y-2">
+              {breakdowns.map((emp, i) => (
+                <div
+                  key={i}
+                  className={`flex items-center gap-3 p-3 rounded-lg ${
+                    emp.eligible === true
+                      ? "bg-green-50 border border-green-200"
+                      : emp.eligible === false
+                      ? "bg-red-50 border border-red-200"
+                      : "bg-gray-50 border border-gray-200"
+                  }`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 truncate">
+                      {emp.name ?? "—"}{emp.jobTitle ? ` · ${emp.jobTitle}` : ""}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {emp.state ?? ""}{emp.postcode ? ` ${emp.postcode}` : ""}
+                      {emp.industry ? ` · ${emp.industry}` : ""}
+                    </p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className={`text-lg font-bold ${emp.eligible === true ? barTextColor : "text-gray-400"}`}>
+                      {emp.days} {isFrench ? "j." : "d."}
+                    </p>
+                    <p className="text-xs">
+                      {emp.eligible === true
+                        ? (isFrench ? "✅ qualifié" : "✅ qualifies")
+                        : emp.eligible === false
+                        ? (isFrench ? "❌ non qualifié" : "❌ non-qualifying")
+                        : (isFrench ? "❓ à vérifier" : "❓ to check")}
+                    </p>
+                  </div>
                 </div>
-                <div className="text-right flex-shrink-0">
-                  <p className={`text-lg font-bold ${barTextColor}`}>
-                    {estimatedDays !== null ? estimatedDays : "?"} {isFrench ? "j." : "d."}
-                  </p>
-                  <p className="text-xs">
-                    {specified_work_eligible === true ? "✅ qualifié" : specified_work_eligible === false ? "❌ non qualifié" : "❓ à vérifier"}
-                  </p>
-                </div>
-              </div>
+              ))}
             </div>
-          )}
+          </div>
 
-          {isEstimate && (
+          {hasEstimate && daysNotes.length > 0 && (
             <p className="mt-3 text-xs text-gray-400 italic">
-              {isFrench ? `Estimation : ${daysNote}` : `Estimate: ${daysNote}`}
+              {daysNotes.join(" · ")}
+            </p>
+          )}
+          {!hasEstimate && totalDays === 0 && (
+            <p className="mt-2 text-xs text-gray-400">
+              {isFrench
+                ? "0 jour calculé — les semaines < 35h/sem ne comptent pas comme travail spécifié."
+                : "0 days calculated — weeks < 35h/week do not count as specified work."}
             </p>
           )}
         </CardContent>
@@ -421,7 +565,7 @@ export function ResultsClient({
               </h2>
 
               {/* Days missing callout */}
-              {!isEligible2nd && daysToGo2nd !== null && daysToGo2nd > 0 && (
+              {specified_work_eligible !== true && daysToGo2nd > 0 && (
                 <div className="inline-flex items-center gap-2 bg-red-100 text-red-800 rounded-lg px-3 py-1.5 text-sm font-semibold mb-3">
                   <AlertCircle className="h-4 w-4 flex-shrink-0" />
                   {isFrench
@@ -430,34 +574,36 @@ export function ResultsClient({
                 </div>
               )}
 
-              <p className="text-sm text-gray-700 mb-3">{specified_work_reason}</p>
+              <p className="text-sm text-gray-700 mb-3">{verdictReason}</p>
 
-              {/* Job qualification breakdown */}
-              <div className={`rounded-lg p-3 text-sm ${
-                specified_work_eligible === true ? "bg-green-50" :
-                specified_work_eligible === false ? "bg-red-50" : "bg-gray-50"
-              }`}>
-                <p className="font-semibold text-gray-800 mb-1">
-                  {fields.jobTitle ?? fields.industry ?? (isFrench ? "Votre emploi" : "Your job")}
-                  {fields.employerName ? ` · ${fields.employerName}` : ""}
-                </p>
-                <p className="text-xs text-gray-600">
-                  {specified_work_eligible === true
-                    ? (isFrench ? "✅ Qualifie comme travail spécifié" : "✅ Qualifies as specified work")
-                    : specified_work_eligible === false
-                    ? (isFrench ? "❌ Ne qualifie pas comme travail spécifié" : "❌ Does not qualify as specified work")
-                    : (isFrench ? "❓ À vérifier avec le service de l'immigration" : "❓ To verify with immigration")}
-                </p>
-                {fields.postcode && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    📍 {fields.postcode}{fields.state ? `, ${fields.state}` : ""}
-                    {" — "}
-                    {specified_work_eligible === false && !fields.industry?.toLowerCase().includes("region")
-                      ? (isFrench ? "zone non régionale ou secteur non qualifiant" : "non-regional area or non-qualifying sector")
-                      : (isFrench ? "zone régionale" : "regional area")}
+              {/* Job qualification breakdown (primary employer) */}
+              {breakdowns.length > 0 && (
+                <div className={`rounded-lg p-3 text-sm ${
+                  specified_work_eligible === true ? "bg-green-50" :
+                  specified_work_eligible === false ? "bg-red-50" : "bg-gray-50"
+                }`}>
+                  <p className="font-semibold text-gray-800 mb-1">
+                    {breakdowns[0].jobTitle ?? breakdowns[0].industry ?? (isFrench ? "Votre emploi" : "Your job")}
+                    {breakdowns[0].name ? ` · ${breakdowns[0].name}` : ""}
                   </p>
-                )}
-              </div>
+                  <p className="text-xs text-gray-600">
+                    {specified_work_eligible === true
+                      ? (isFrench ? "✅ Qualifie comme travail spécifié" : "✅ Qualifies as specified work")
+                      : specified_work_eligible === false
+                      ? (isFrench ? "❌ Ne qualifie pas comme travail spécifié" : "❌ Does not qualify as specified work")
+                      : (isFrench ? "❓ À vérifier avec le service de l'immigration" : "❓ To verify with immigration")}
+                  </p>
+                  {breakdowns[0].postcode && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      📍 {breakdowns[0].postcode}{breakdowns[0].state ? `, ${breakdowns[0].state}` : ""}
+                      {" — "}
+                      {specified_work_eligible === false
+                        ? (isFrench ? "zone non régionale ou secteur non qualifiant" : "non-regional area or non-qualifying sector")
+                        : (isFrench ? "zone régionale" : "regional area")}
+                    </p>
+                  )}
+                </div>
+              )}
 
               <a
                 href="https://immi.homeaffairs.gov.au/visas/getting-a-visa/visa-listing/work-holiday-417/specified-work"
@@ -496,6 +642,7 @@ export function ResultsClient({
             confidence={confidence_scores.fullName ?? 1}
             copiedKey={copiedField === "fullName" ? "copied" : "fullName"}
             onCopy={copyToClipboard}
+            isFrench={isFrench}
           />
 
           {/* 🏢 Employer */}
@@ -510,6 +657,7 @@ export function ResultsClient({
               confidence={confidence_scores[f] ?? 1}
               copiedKey={copiedField === f ? "copied" : f}
               onCopy={copyToClipboard}
+              isFrench={isFrench}
             />
           ))}
 
@@ -525,6 +673,7 @@ export function ResultsClient({
               confidence={confidence_scores[f] ?? 1}
               copiedKey={copiedField === f ? "copied" : f}
               onCopy={copyToClipboard}
+              isFrench={isFrench}
             />
           ))}
 
@@ -540,6 +689,7 @@ export function ResultsClient({
               confidence={confidence_scores[f] ?? 1}
               copiedKey={copiedField === f ? "copied" : f}
               onCopy={copyToClipboard}
+              isFrench={isFrench}
             />
           ))}
 
@@ -553,6 +703,7 @@ export function ResultsClient({
             confidence={confidence_scores.specifiedWork ?? 1}
             copiedKey={copiedField === "specifiedWork" ? "copied" : "specifiedWork"}
             onCopy={copyToClipboard}
+            isFrench={isFrench}
           />
         </CardContent>
       </Card>
@@ -711,7 +862,7 @@ export function ResultsClient({
                   type="button"
                   onClick={() => setChecklist((prev) => ({ ...prev, [i]: !prev[i] }))}
                   className={`flex-shrink-0 w-6 h-6 rounded border-2 flex items-center justify-center transition-colors ${checklist[i] ? "bg-green-500 border-green-500" : "border-gray-300 hover:border-green-400"}`}
-                  aria-label={checklist[i] ? "Uncheck" : "Check"}
+                  aria-label={checklist[i] ? (isFrench ? "Décocher" : "Uncheck") : (isFrench ? "Cocher" : "Check")}
                 >
                   {checklist[i] && <Check className="h-3.5 w-3.5 text-white" />}
                 </button>

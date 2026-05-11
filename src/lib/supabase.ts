@@ -17,11 +17,33 @@ export const supabaseAdmin = {
   from: (...args: Parameters<SupabaseClient["from"]>) => getSupabaseAdmin().from(...args),
 };
 
+export type EmployerData = {
+  employerName: string | null;
+  employerAbn: string | null;
+  jobTitle: string | null;
+  employmentType: string | null;
+  hoursPerWeek: string | null;
+  totalHours: string | null;
+  payPeriod: string | null;
+  grossIncome: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  postcode: string | null;
+  state: string | null;
+  industry: string | null;
+  specifiedWork: string | null;
+  specified_work_eligible: boolean | null;
+  specified_work_reason: string;
+  specified_work_reason_fr: string;
+};
+
 export type AnalysisResult = {
   fields: ExtractedFields;
+  employers?: EmployerData[];
   missing_fields: string[];
   specified_work_eligible: boolean | null;
   specified_work_reason: string;
+  specified_work_reason_fr?: string;
   confidence_scores: Record<string, number>;
   raw_text: string;
 };
