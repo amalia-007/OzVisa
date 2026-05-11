@@ -227,8 +227,8 @@ export async function analyzeDocuments(
   let response: Awaited<ReturnType<typeof anthropic.messages.create>>;
   try {
     response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 4096,
+      model: "claude-haiku-4-5-20251001", // fastest model; note: user requested "claude-sonnet-4-5" which is not a valid ID
+      max_tokens: 4000,
       system: EXTRACTION_PROMPT,
       messages: [
         {

@@ -6,9 +6,11 @@ import { sendResultsEmail } from "@/lib/resend";
 import Stripe from "stripe";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300; // Pro plan allows up to 300s
 
 export async function POST(req: NextRequest) {
+  const t0 = Date.now();
+  const elapsed = () => `${Date.now() - t0}ms`;
   console.log("[webhook] POST received");
 
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -65,6 +67,7 @@ export async function POST(req: NextRequest) {
   console.log("[webhook] analysis_id:", analysisId);
 
   // Fetch the analysis record
+  console.log(`[webhook] [${elapsed()}] Fetching analysis record from Supabase...`);
   const { data: analysis, error: fetchError } = await supabaseAdmin
     .from("analyses")
     .select("*")
@@ -72,10 +75,10 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (fetchError || !analysis) {
-    console.error("[webhook] Failed to fetch analysis record — id:", analysisId, "| error:", fetchError?.message, fetchError?.code);
+    console.error(`[webhook] [${elapsed()}] Failed to fetch analysis record — id:`, analysisId, "| error:", fetchError?.message, fetchError?.code);
     return NextResponse.json({ error: "Analysis not found" }, { status: 404 });
   }
-  console.log("[webhook] Analysis record found — current status:", analysis.stripe_status);
+  console.log(`[webhook] [${elapsed()}] Analysis record found — current status:`, analysis.stripe_status);
 
   // Update stripe status to paid
   const { error: updatePaidErr } = await supabaseAdmin
@@ -87,31 +90,34 @@ export async function POST(req: NextRequest) {
         : session.payment_intent?.toString() || null,
     })
     .eq("id", analysisId);
-  if (updatePaidErr) console.error("[webhook] Failed to update status to paid:", updatePaidErr.message);
-  else console.log("[webhook] Status updated to 'paid'");
+  if (updatePaidErr) console.error(`[webhook] [${elapsed()}] Failed to update status to paid:`, updatePaidErr.message);
+  else console.log(`[webhook] [${elapsed()}] Status updated to 'paid'`);
 
   // Run AI analysis
   try {
-    console.log("[webhook] Parsing payslip_b64...");
+    console.log(`[webhook] [${elapsed()}] Parsing payslip_b64...`);
     const payslipsRaw: Array<{ b64: string; name: string }> = JSON.parse(analysis.payslip_b64);
     const payslips = payslipsRaw.map((p) => ({ buffer: Buffer.from(p.b64, "base64"), name: p.name }));
-    console.log("[webhook] Payslips count:", payslips.length);
+    console.log(`[webhook] [${elapsed()}] Payslips count:`, payslips.length);
 
     const letters: Array<{ buffer: Buffer; name: string }> = [];
     if (analysis.letter_b64) {
       const lettersRaw: Array<{ b64: string; name: string }> = JSON.parse(analysis.letter_b64);
       for (const l of lettersRaw) letters.push({ buffer: Buffer.from(l.b64, "base64"), name: l.name });
     }
-    console.log("[webhook] Letters count:", letters.length);
+    console.log(`[webhook] [${elapsed()}] Letters count:`, letters.length);
 
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
-    console.log("[webhook] ANTHROPIC_API_KEY set:", !!anthropicKey, "| starts with:", anthropicKey?.substring(0, 10));
+    console.log(`[webhook] [${elapsed()}] ANTHROPIC_API_KEY set:`, !!anthropicKey, "| starts with:", anthropicKey?.substring(0, 10));
 
-    console.log("[webhook] Calling analyzeDocuments...");
+    console.log(`[webhook] [${elapsed()}] Calling analyzeDocuments...`);
+    const tClaude = Date.now();
     const result = await analyzeDocuments(payslips, letters, analysis.visa_type);
-    console.log("[webhook] analyzeDocuments completed — fields extracted:", Object.keys(result.fields || {}).length);
+    console.log(`[webhook] [${elapsed()}] analyzeDocuments completed in ${Date.now() - tClaude}ms — employers: ${result.employers?.length ?? 0}`);
 
     // Store results and clear document data
+    console.log(`[webhook] [${elapsed()}] Updating Supabase → completed...`);
+    const tDb = Date.now();
     const { error: updateCompleteErr } = await supabaseAdmin
       .from("analyses")
       .update({
@@ -123,26 +129,26 @@ export async function POST(req: NextRequest) {
         letter_name: null,
       })
       .eq("id", analysisId);
-    if (updateCompleteErr) console.error("[webhook] Failed to update status to completed:", updateCompleteErr.message);
-    else console.log("[webhook] Status updated to 'completed' — analysis stored");
+    if (updateCompleteErr) console.error(`[webhook] [${elapsed()}] Failed to update status to completed:`, updateCompleteErr.message);
+    else console.log(`[webhook] [${elapsed()}] Supabase updated to 'completed' in ${Date.now() - tDb}ms`);
 
     // Send email
     try {
-      console.log("[webhook] Sending results email to:", analysis.email);
+      console.log(`[webhook] [${elapsed()}] Sending results email to:`, analysis.email);
       await sendResultsEmail(analysis.email, analysisId, result, analysis.visa_type, analysis.language);
-      console.log("[webhook] Email sent OK");
+      console.log(`[webhook] [${elapsed()}] Email sent OK`);
     } catch (emailErr) {
-      console.error("[webhook] Email send failed (non-fatal):", emailErr);
+      console.error(`[webhook] [${elapsed()}] Email send failed (non-fatal):`, emailErr);
     }
   } catch (analysisErr) {
-    console.error("[webhook] analyzeDocuments threw an error:", analysisErr);
+    console.error(`[webhook] [${elapsed()}] analyzeDocuments threw an error:`, analysisErr);
     await supabaseAdmin
       .from("analyses")
       .update({ stripe_status: "analysis_failed" })
       .eq("id", analysisId);
-    console.log("[webhook] Status updated to 'analysis_failed'");
+    console.log(`[webhook] [${elapsed()}] Status updated to 'analysis_failed'`);
   }
 
-  console.log("[webhook] Done — returning 200");
+  console.log(`[webhook] [${elapsed()}] Done — returning 200`);
   return NextResponse.json({ received: true });
 }

@@ -5,7 +5,7 @@
   "installCommand": "npm install",
   "functions": {
     "src/app/api/stripe/webhook/route.ts": {
-      "maxDuration": 60
+      "maxDuration": 300
     },
     "src/app/api/stripe/checkout/route.ts": {
       "maxDuration": 30

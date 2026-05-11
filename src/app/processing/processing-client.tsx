@@ -50,7 +50,7 @@ function ProcessingInner({
     }
 
     let attempts = 0;
-    const maxAttempts = 60; // 2 minutes max
+    const maxAttempts = 150; // 300 seconds max (150 × 2s), matching server maxDuration
 
     const poll = async () => {
       try {
