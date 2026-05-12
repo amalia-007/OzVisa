@@ -4,12 +4,11 @@
 //   1. Plant and animal cultivation (all farming / horticulture / agriculture subtypes)
 //   2. Fishing and pearling
 //   3. Tree farming and felling
-//   4. Mining (includes mine-site security and mining services roles)
+//   4. Mining — ALL work physically performed on mine sites, including security, emergency
+//      services, catering, maintenance, and labour hire personnel deployed to mine sites
 //   5. Construction (regional only)
 //   6. Bushfire / flood / disaster recovery
 
-// Plant and animal cultivation covers an enormous range of roles.
-// We intentionally match broadly — any disqualifying industry check fires first.
 export const SPECIFIED_WORK_TYPES = [
   // Plant and animal cultivation
   "plant and animal cultivation",
@@ -63,7 +62,7 @@ export const SPECIFIED_WORK_TYPES = [
   "forestry",
   "timber",
   "silviculture",
-  // Mining (including mine-site security and labour hire for mines)
+  // Mining — includes ALL support services physically on mine sites
   "mining",
   "mine site",
   "mine work",
@@ -74,7 +73,9 @@ export const SPECIFIED_WORK_TYPES = [
   "mine site security",
   "mining security",
   "mining services",
+  "mining emergency",
   "goldfields",
+  "resources industry",
   // Construction (regional enforcement is via postcode check)
   "construction",
   "building and construction",
@@ -113,6 +114,19 @@ const NON_QUALIFYING_INDUSTRIES = [
   "massage",
 ];
 
+// Industries that MAY qualify depending on site type — require employer letter to confirm.
+// e.g. landscaping on a mine or construction site qualifies; landscaping at a hotel does not.
+const MAYBE_QUALIFYING_INDUSTRIES = [
+  "landscaping",
+  "landscape",
+  "grounds maintenance",
+  "grounds work",
+  "earthworks",
+  "civil maintenance",
+  "site maintenance",
+  "turf",
+];
+
 // Metropolitan postcode ranges — work here does NOT qualify as regional.
 // Source: Department of Home Affairs — excluded metropolitan areas.
 // Excludes: Sydney, Melbourne, Brisbane, Perth, Adelaide, Gold Coast (added Dec 2019).
@@ -146,13 +160,26 @@ function isDisqualifyingIndustry(industry: string): boolean {
   return NON_QUALIFYING_INDUSTRIES.some((t) => lower.includes(t));
 }
 
+function isMaybeIndustry(industry: string): boolean {
+  const lower = industry.toLowerCase();
+  return MAYBE_QUALIFYING_INDUSTRIES.some((t) => lower.includes(t));
+}
+
+export type EligibilityResult = {
+  eligible: boolean;
+  reason: string;
+  reasonFr: string;
+  upgradePossible: boolean;
+};
+
 // Always returns a definitive true/false — never null.
 // Default: ✅ for qualifying industries unless the postcode is explicitly metropolitan.
+// upgradePossible: true when the industry might qualify with an employer letter (e.g. landscaping).
 export function checkSpecifiedWorkEligibility(
   postcode: string | null,
   state: string | null,
   industry: string | null
-): { eligible: boolean; reason: string; reasonFr: string } {
+): EligibilityResult {
   const postcodeNum = postcode ? parseInt(postcode, 10) : null;
   const isMetro = postcodeNum !== null ? isMetroPostcode(postcodeNum) : false;
 
@@ -163,6 +190,7 @@ export function checkSpecifiedWorkEligibility(
   if (industry && isDisqualifyingIndustry(industry)) {
     return {
       eligible: false,
+      upgradePossible: false,
       reason: `"${industry}" does not qualify as specified work. Qualifying sectors: agriculture, horticulture, fishing, pearling, tree farming, mining, and construction. You need 88 days of regional specified work for a 2nd WHV (417).`,
       reasonFr: `"${industry}" ne qualifie pas comme travail spécifié. Secteurs qualifiants : agriculture, horticulture, pêche, perliculture, exploitation forestière, exploitation minière et construction. Il vous faut 88 jours de travail spécifié en zone régionale pour un 2ème WHV (417).`,
     };
@@ -172,6 +200,7 @@ export function checkSpecifiedWorkEligibility(
   if (isMetro) {
     return {
       eligible: false,
+      upgradePossible: false,
       reason: `Postcode ${postcode} is in a metropolitan area (Sydney, Melbourne, Brisbane, Perth, Adelaide or Gold Coast). Specified work must be done in regional Australia. 88 days of regional specified work required for a 2nd WHV (417).`,
       reasonFr: `Le code postal ${postcode} est en zone métropolitaine (Sydney, Melbourne, Brisbane, Perth, Adélaïde ou Gold Coast). Le travail spécifié doit être effectué dans l'Australie régionale. 88 jours de travail spécifié en zone régionale requis pour un 2ème WHV (417).`,
     };
@@ -187,14 +216,28 @@ export function checkSpecifiedWorkEligibility(
       : "et votre lieu de travail est hors zone métropolitaine";
     return {
       eligible: true,
+      upgradePossible: false,
       reason: `"${industry}" qualifies as specified work ${locPhrase}. ✅ You need 88 days (≈ 3 months) for a 2nd WHV, or 179 days (≈ 6 months) for a 3rd WHV (subclass 417). Ensure you have payslips or an employer letter confirming exact start and end dates.`,
       reasonFr: `"${industry}" qualifie comme travail spécifié ${locPhraseFr}. ✅ Il vous faut 88 jours (≈ 3 mois) pour un 2ème WHV, ou 179 jours (≈ 6 mois) pour un 3ème WHV (sous-classe 417). Assurez-vous d'avoir des fiches de paie ou une lettre d'employeur confirmant vos dates exactes de début et fin.`,
+    };
+  }
+
+  // Potentially qualifying industry (landscaping on construction/mine site etc.) → ⚠️ upgrade possible
+  if (industry && isMaybeIndustry(industry)) {
+    const locPhrase = location ? ` at ${location}` : "";
+    const locPhraseFr = locationFr ? ` à ${locationFr}` : "";
+    return {
+      eligible: false,
+      upgradePossible: true,
+      reason: `"${industry}"${locPhrase} may qualify as specified work under "Construction" if performed on a construction site, mining infrastructure project, or disaster recovery zone in a regional area. Request an employer letter confirming the site type to upgrade this work to ✅ qualifying.`,
+      reasonFr: `"${industry}"${locPhraseFr} pourrait qualifier comme travail spécifié sous "Construction" si réalisé sur un chantier de construction, une infrastructure minière, ou une zone de reconstruction post-catastrophe en région. Demandez une lettre d'employeur confirmant le type de chantier pour passer ce travail en ✅ qualifiant.`,
     };
   }
 
   // Industry unknown or unrecognised → ❌ (cannot confirm qualifying work)
   return {
     eligible: false,
+    upgradePossible: false,
     reason: `Could not confirm qualifying specified work${industry ? ` ("${industry}" is not a recognised specified work category)` : ""}. Eligible sectors: agriculture, horticulture, viticulture, fishing, pearling, tree farming, mining, construction. You need 88 days in a regional area for a 2nd WHV (subclass 417).`,
     reasonFr: `Travail spécifié qualifiant non confirmé${industry ? ` ("${industry}" n'est pas une catégorie reconnue)` : ""}. Secteurs éligibles : agriculture, horticulture, viticulture, pêche, perliculture, exploitation forestière, exploitation minière, construction. Il vous faut 88 jours en zone régionale pour un 2ème WHV (sous-classe 417).`,
   };

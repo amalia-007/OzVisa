@@ -172,6 +172,64 @@ Kind regards,
 ${name}`;
 }
 
+// ─── Upgrade letter email generator ──────────────────────────────────────────
+
+function generateUpgradeLetterEmail(
+  lang: "fr" | "en",
+  employerName: string | null,
+  jobTitle: string | null,
+  fullName: string | null
+): string {
+  const name = fullName ?? (lang === "fr" ? "[Votre Prénom Nom]" : "[Your Full Name]");
+  const empName = employerName ?? (lang === "fr" ? "[Nom de l'employeur]" : "[Employer Name]");
+
+  if (lang === "fr") {
+    return `Objet : Confirmation de travail spécifié — WHV 417
+
+Bonjour,
+
+Je me permets de vous contacter afin d'obtenir une confirmation écrite de mon emploi, nécessaire pour ma demande de renouvellement de Working Holiday Visa (sous-classe 417) auprès du Department of Home Affairs australien.
+
+Pourriez-vous me fournir une lettre officielle confirmant les informations suivantes :
+• Nature exacte du travail effectué (type de chantier : construction, infrastructure minière, zone de reconstruction post-catastrophe, etc.)
+• Lieu de travail exact (adresse du chantier, pas du siège social) et code postal
+• Dates exactes d'emploi (début et fin)
+• Nombre moyen d'heures travaillées par semaine
+• Mon titre de poste${jobTitle ? ` (${jobTitle})` : ""}
+• ABN de votre entreprise
+• Signature et cachet de l'employeur
+
+Ces informations sont requises pour prouver que mon travail constitue du « travail spécifié » (specified work) en zone régionale australienne.
+
+Je vous remercie par avance pour votre aide.
+
+Cordialement,
+${name}`;
+  }
+
+  return `Subject: Specified work confirmation — WHV 417
+
+Dear ${empName} team,
+
+I am writing to request a written confirmation of my employment, required for my Working Holiday Visa (subclass 417) renewal application with the Australian Department of Home Affairs.
+
+Could you please provide an official letter confirming the following details:
+• Exact nature of work performed (e.g. construction site, mining infrastructure project, disaster recovery zone)
+• Exact work location (site address, not company HQ) and postcode
+• Exact dates of employment (start and end dates)
+• Average weekly hours worked
+• My job title${jobTitle ? ` (${jobTitle})` : ""}
+• Your company's ABN
+• Employer signature and stamp
+
+This information is required to demonstrate that my work qualifies as "specified work" in a regional area of Australia under the Working Holiday Maker program.
+
+Thank you in advance for your assistance.
+
+Kind regards,
+${name}`;
+}
+
 // ─── FieldRow ─────────────────────────────────────────────────────────────────
 
 function FieldRow({
@@ -243,7 +301,7 @@ function PayslipCard({
 }: {
   payslip: PayslipRecord;
   index: number;
-  employerQualifies: boolean | null;
+  employerQualifies: boolean | null | "maybe";
   isFrench: boolean;
   copiedField: string | null;
   onCopy: (v: string, k: string) => void;
@@ -274,8 +332,8 @@ function PayslipCard({
               <p className="text-xs text-gray-500">
                 {payslip.payPeriodStart} → {payslip.payPeriodEnd}
                 {periodDays !== null && (
-                  <span className={`ml-2 font-semibold ${employerQualifies ? "text-green-700" : "text-gray-500"}`}>
-                    ({periodDays} {isFrench ? "jours" : "days"}{employerQualifies ? " ✅" : ""})
+                  <span className={`ml-2 font-semibold ${employerQualifies === true ? "text-green-700" : "text-gray-500"}`}>
+                    ({periodDays} {isFrench ? "jours" : "days"}{employerQualifies === true ? " ✅" : ""})
                   </span>
                 )}
               </p>
@@ -308,6 +366,11 @@ function PayslipCard({
                         ❌ {isFrench ? "non qualifiant" : "non-qualifying"}
                       </span>
                     )}
+                    {isJobTitle && employerQualifies === "maybe" && (
+                      <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold flex-shrink-0">
+                        ⚠️ {isFrench ? "à confirmer" : "to confirm"}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <button
@@ -321,6 +384,90 @@ function PayslipCard({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── UpgradeBox ───────────────────────────────────────────────────────────────
+
+function UpgradeBox({
+  employer,
+  fullName,
+  isFrench,
+}: {
+  employer: EmployerData;
+  fullName: string | null;
+  isFrench: boolean;
+}) {
+  const [lang, setLang] = useState<"fr" | "en">(isFrench ? "fr" : "en");
+  const [copied, setCopied] = useState(false);
+
+  const potentialDays = calculateQualifyingDays(
+    { ...employer, specified_work_eligible: true },
+    isFrench
+  ).days;
+
+  const emailText = generateUpgradeLetterEmail(lang, employer.employerName, employer.jobTitle, fullName);
+
+  return (
+    <div className="mt-1 mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3">
+      <div className="flex items-start gap-3">
+        <span className="text-xl flex-shrink-0">💡</span>
+        <div>
+          <p className="font-semibold text-amber-900 text-sm">
+            {isFrench ? "Possibilité d'upgrade — lettre d'employeur requise" : "Upgrade possible — employer letter required"}
+          </p>
+          <p className="text-xs text-amber-800 mt-1 leading-relaxed">
+            {isFrench
+              ? `Ce travail (${employer.industry ?? "travaux"}) peut qualifier comme travail spécifié sous la catégorie "Construction" s'il a été réalisé sur un chantier de construction, une infrastructure minière, ou une zone de reconstruction post-catastrophe en zone régionale. Une lettre d'employeur confirmant le type de chantier suffit.`
+              : `This work (${employer.industry ?? "civil works"}) may qualify as specified work under "Construction" if performed on a construction site, mining infrastructure project, or disaster recovery zone in a regional area. An employer letter confirming the site type is sufficient.`}
+          </p>
+          {potentialDays > 0 && (
+            <p className="text-xs font-semibold text-amber-900 mt-2">
+              📅{" "}
+              {isFrench
+                ? `Avec cette lettre, ce travail pourrait ajouter ${potentialDays} jours qualifiants à votre total.`
+                : `With this letter, this work could add ${potentialDays} qualifying days to your total.`}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="border-t border-amber-200 pt-3">
+        <p className="text-xs font-semibold text-amber-800 mb-2">
+          {isFrench ? "Modèle d'email à envoyer à votre employeur :" : "Email template to send to your employer:"}
+        </p>
+        <div className="flex gap-2 mb-2">
+          {(["fr", "en"] as const).map((l) => (
+            <button
+              key={l}
+              onClick={() => setLang(l)}
+              className={`px-3 py-1 rounded-md text-xs font-medium border transition-colors ${
+                lang === l
+                  ? "bg-amber-600 text-white border-amber-600"
+                  : "bg-white text-amber-700 border-amber-300 hover:border-amber-500"
+              }`}
+            >
+              {l === "fr" ? "🇫🇷 Français" : "🇬🇧 English"}
+            </button>
+          ))}
+        </div>
+        <pre className="whitespace-pre-wrap text-xs bg-white rounded-lg p-3 border border-amber-200 font-sans leading-relaxed text-gray-800 max-h-64 overflow-y-auto">
+          {emailText}
+        </pre>
+        <button
+          onClick={async () => {
+            await navigator.clipboard.writeText(emailText);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          }}
+          className="mt-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-300 bg-white text-amber-700 text-xs font-medium hover:bg-amber-50 transition-colors"
+        >
+          {copied
+            ? <><Check className="h-3.5 w-3.5 text-green-600" />{isFrench ? "Copié !" : "Copied!"}</>
+            : <><Copy className="h-3.5 w-3.5" />{isFrench ? "Copier l'email" : "Copy email"}</>}
+        </button>
+      </div>
     </div>
   );
 }
@@ -436,7 +583,7 @@ export function ResultsClient({
     ? employers.some((e) => e.specified_work_eligible === true)
     : result.specified_work_eligible === true;
   const allDisqualified = employers.length > 0
-    ? employers.every((e) => e.specified_work_eligible === false)
+    ? employers.every((e) => e.specified_work_eligible === false && !e.upgrade_possible)
     : result.specified_work_eligible === false;
 
   const verdictKey = computeVerdict(totalDays, anyEligible, allDisqualified);
@@ -594,9 +741,9 @@ export function ResultsClient({
                     className={`flex items-center gap-3 p-3 rounded-lg ${
                       e.employer.specified_work_eligible === true
                         ? "bg-green-50 border border-green-200"
-                        : e.employer.specified_work_eligible === false
-                        ? "bg-red-50 border border-red-200"
-                        : "bg-gray-50 border border-gray-200"
+                        : e.employer.upgrade_possible
+                        ? "bg-amber-50 border border-amber-200"
+                        : "bg-red-50 border border-red-200"
                     }`}
                   >
                     <div className="flex-1 min-w-0">
@@ -616,6 +763,8 @@ export function ResultsClient({
                       <p className="text-xs">
                         {e.employer.specified_work_eligible === true
                           ? (isFrench ? "✅ qualifié" : "✅ qualifies")
+                          : e.employer.upgrade_possible
+                          ? (isFrench ? "⚠️ potentiel" : "⚠️ potential")
                           : (isFrench ? "❌ non qualifié" : "❌ non-qualifying")}
                       </p>
                     </div>
@@ -667,7 +816,7 @@ export function ResultsClient({
                 return (
                   <div className={`rounded-lg p-3 text-sm ${
                     emp.specified_work_eligible === true ? "bg-green-50" :
-                    emp.specified_work_eligible === false ? "bg-red-50" : "bg-gray-50"
+                    emp.upgrade_possible ? "bg-amber-50" : "bg-red-50"
                   }`}>
                     <p className="font-semibold text-gray-800 mb-1">
                       {emp.jobTitle ?? emp.industry ?? (isFrench ? "Votre emploi" : "Your job")}
@@ -676,15 +825,19 @@ export function ResultsClient({
                     <p className="text-xs text-gray-600">
                       {emp.specified_work_eligible === true
                         ? (isFrench ? "✅ Qualifie comme travail spécifié" : "✅ Qualifies as specified work")
+                        : emp.upgrade_possible
+                        ? (isFrench ? "⚠️ Potentiellement qualifiant — lettre d'employeur requise" : "⚠️ Potentially qualifying — employer letter required")
                         : (isFrench ? "❌ Ne qualifie pas comme travail spécifié" : "❌ Does not qualify as specified work")}
                     </p>
                     {emp.postcode && (
                       <p className="text-xs text-gray-500 mt-1">
                         📍 {emp.postcode}{emp.state ? `, ${emp.state}` : ""}
                         {" — "}
-                        {emp.specified_work_eligible === false
-                          ? (isFrench ? "zone non régionale ou secteur non qualifiant" : "non-regional area or non-qualifying sector")
-                          : (isFrench ? "zone régionale" : "regional area")}
+                        {emp.specified_work_eligible === true
+                          ? (isFrench ? "zone régionale" : "regional area")
+                          : emp.upgrade_possible
+                          ? (isFrench ? "zone régionale — type de chantier à confirmer" : "regional area — site type to confirm")
+                          : (isFrench ? "zone non régionale ou secteur non qualifiant" : "non-regional area or non-qualifying sector")}
                       </p>
                     )}
                   </div>
@@ -745,6 +898,10 @@ export function ResultsClient({
                     <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
                       ✅ {isFrench ? "travail qualifiant" : "qualifying work"}
                     </span>
+                  ) : emp.upgrade_possible ? (
+                    <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
+                      ⚠️ {isFrench ? "potentiellement qualifiant" : "potentially qualifying"}
+                    </span>
                   ) : (
                     <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">
                       ❌ {isFrench ? "non qualifiant" : "non-qualifying"}
@@ -753,17 +910,26 @@ export function ResultsClient({
                 </div>
 
                 {emp.payslips && emp.payslips.length > 0 ? (
-                  emp.payslips.map((p, pIdx) => (
-                    <PayslipCard
-                      key={pIdx}
-                      payslip={p}
-                      index={pIdx}
-                      employerQualifies={emp.specified_work_eligible}
-                      isFrench={isFrench}
-                      copiedField={copiedField}
-                      onCopy={copyToClipboard}
-                    />
-                  ))
+                  <>
+                    {emp.payslips.map((p, pIdx) => (
+                      <PayslipCard
+                        key={pIdx}
+                        payslip={p}
+                        index={pIdx}
+                        employerQualifies={emp.upgrade_possible ? "maybe" : emp.specified_work_eligible}
+                        isFrench={isFrench}
+                        copiedField={copiedField}
+                        onCopy={copyToClipboard}
+                      />
+                    ))}
+                    {emp.upgrade_possible && (
+                      <UpgradeBox
+                        employer={emp}
+                        fullName={fields.fullName}
+                        isFrench={isFrench}
+                      />
+                    )}
+                  </>
                 ) : (
                   // Old format: show flat employer data
                   <div className="border border-gray-100 rounded-xl overflow-hidden mb-3">

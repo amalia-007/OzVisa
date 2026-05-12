@@ -34,10 +34,13 @@ POSTCODE EXTRACTION — CRITICAL:
 INDUSTRY CLASSIFICATION — use these exact categories for WHV specified work:
 - Orchard work, fruit picking, vegetable picking, farm work → classify as "horticulture"
 - Any farm/agricultural work (crops, dairy, livestock, poultry, vineyard, beekeeping) → classify as "agriculture"
-- Security/labour hire working ON A MINE SITE → classify as "mining"
+- Security guards, sentries, emergency response personnel, or labour hire workers physically deployed TO A MINE SITE → classify as "mining" (mine site work qualifies regardless of the contractor's own industry)
+- Riklan Emergency Management Services, any employer with "emergency management" providing services TO mining companies → classify as "mining"
+- Any employer whose name includes "mine", "mining", "goldfields", "resources" AND job title is security/sentry/emergency/maintenance → classify as "mining"
 - Fishing boats, aquaculture, pearl farming → classify as "fishing and pearling"
 - Logging, tree planting, forestry → classify as "tree farming and felling"
 - Road, civil, building works → classify as "construction"
+- Landscaping or grounds maintenance (may qualify if on construction/mining site — use "landscaping") → classify as "landscaping"
 - Hotel, bar, cafe, kitchen work → classify as "hospitality"
 - When in doubt for farm-adjacent work: lean toward the most specific qualifying category
 
@@ -133,6 +136,41 @@ function sortDateStr(dates: (string | null | undefined)[], desc = false): string
     });
 }
 
+// Employer names known to provide services TO mine sites — all work qualifies as mining
+const MINING_EMPLOYER_OVERRIDES = [
+  "riklan",                     // Riklan Emergency Management Services
+  "goldfields people hire",     // GPH labour hire for mine sites
+  "gph goldfields",
+];
+
+function getEffectiveIndustry(
+  employerName: string | null,
+  extractedIndustry: string | null,
+  jobTitle: string | null
+): string | null {
+  const empLower = (employerName ?? "").toLowerCase();
+  const titleLower = (jobTitle ?? "").toLowerCase();
+
+  // Explicit employer whitelist: these companies deploy workers to mine sites
+  if (MINING_EMPLOYER_OVERRIDES.some((k) => empLower.includes(k))) {
+    return "mining";
+  }
+
+  // Generic inference: employer name has mine/mining + job title is security/emergency/sentry
+  const empIsMining = empLower.includes("mine") || empLower.includes("mining") || empLower.includes("goldfields");
+  const titleIsMineRole =
+    titleLower.includes("sentry") ||
+    titleLower.includes("security") ||
+    titleLower.includes("guard") ||
+    titleLower.includes("emergency") ||
+    titleLower.includes("warden");
+  if (empIsMining && titleIsMineRole) {
+    return "mining";
+  }
+
+  return extractedIndustry ?? null;
+}
+
 function groupPayslipsToEmployers(payslips: PayslipRecord[]): EmployerData[] {
   const map = new Map<string, PayslipRecord[]>();
   for (const p of payslips) {
@@ -165,10 +203,16 @@ function groupPayslipsToEmployers(payslips: PayslipRecord[]): EmployerData[] {
       }
     }
 
-    const { eligible, reason, reasonFr } = checkSpecifiedWorkEligibility(
+    const effectiveIndustry = getEffectiveIndustry(
+      first.employerName ?? null,
+      first.industry ?? null,
+      first.jobTitle ?? null
+    );
+
+    const { eligible, reason, reasonFr, upgradePossible } = checkSpecifiedWorkEligibility(
       first.postcode ?? null,
       first.state ?? null,
-      first.industry ?? null
+      effectiveIndustry
     );
 
     return {
@@ -184,11 +228,12 @@ function groupPayslipsToEmployers(payslips: PayslipRecord[]): EmployerData[] {
       endDate,
       postcode: first.postcode ?? null,
       state: first.state ?? null,
-      industry: first.industry ?? null,
-      specifiedWork: eligible === true ? "yes" : eligible === false ? "no" : "possible",
+      industry: effectiveIndustry ?? first.industry ?? null,
+      specifiedWork: eligible === true ? "yes" : "no",
       specified_work_eligible: eligible,
       specified_work_reason: reason,
       specified_work_reason_fr: reasonFr,
+      upgrade_possible: upgradePossible,
       payslips: empPayslips,
     };
   });
@@ -341,8 +386,9 @@ export async function analyzeDocuments(
   } else if (raw.employers && raw.employers.length > 0) {
     // Old employer-array format
     employers = raw.employers.map((emp) => {
-      const { eligible, reason, reasonFr } = checkSpecifiedWorkEligibility(
-        emp.postcode ?? null, emp.state ?? null, emp.industry ?? null
+      const effectiveIndustry = getEffectiveIndustry(emp.employerName ?? null, emp.industry ?? null, emp.jobTitle ?? null);
+      const { eligible, reason, reasonFr, upgradePossible } = checkSpecifiedWorkEligibility(
+        emp.postcode ?? null, emp.state ?? null, effectiveIndustry
       );
       return {
         employerName: emp.employerName ?? null,
@@ -357,11 +403,12 @@ export async function analyzeDocuments(
         endDate: emp.endDate ?? null,
         postcode: emp.postcode ?? null,
         state: emp.state ?? null,
-        industry: emp.industry ?? null,
+        industry: effectiveIndustry ?? emp.industry ?? null,
         specifiedWork: emp.specifiedWork ?? null,
         specified_work_eligible: eligible,
         specified_work_reason: reason,
         specified_work_reason_fr: reasonFr,
+        upgrade_possible: upgradePossible,
         payslips: [],
       };
     });
@@ -369,8 +416,9 @@ export async function analyzeDocuments(
   } else if (raw.fields) {
     // Very old fields format
     const f = raw.fields;
-    const { eligible, reason, reasonFr } = checkSpecifiedWorkEligibility(
-      f.postcode ?? null, f.state ?? null, f.industry ?? null
+    const effectiveIndustryF = getEffectiveIndustry(f.employerName ?? null, f.industry ?? null, f.jobTitle ?? null);
+    const { eligible, reason, reasonFr, upgradePossible } = checkSpecifiedWorkEligibility(
+      f.postcode ?? null, f.state ?? null, effectiveIndustryF
     );
     employers = [{
       employerName: f.employerName ?? null,
@@ -385,11 +433,12 @@ export async function analyzeDocuments(
       endDate: f.endDate ?? null,
       postcode: f.postcode ?? null,
       state: f.state ?? null,
-      industry: f.industry ?? null,
+      industry: effectiveIndustryF ?? f.industry ?? null,
       specifiedWork: f.specifiedWork ?? null,
       specified_work_eligible: eligible,
       specified_work_reason: reason,
       specified_work_reason_fr: reasonFr,
+      upgrade_possible: upgradePossible,
       payslips: [],
     }];
     console.log("[claude] Very old fields format");

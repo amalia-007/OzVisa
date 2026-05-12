@@ -50,6 +50,7 @@ export type EmployerData = {
   specified_work_eligible: boolean | null;
   specified_work_reason: string;
   specified_work_reason_fr: string;
+  upgrade_possible?: boolean;
   payslips: PayslipRecord[];
 };
 
