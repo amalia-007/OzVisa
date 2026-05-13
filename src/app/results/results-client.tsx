@@ -50,24 +50,53 @@ function calendarDaysInclusive(start: Date, end: Date): number {
   return Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1;
 }
 
-function sumMergedRanges(ranges: [Date, Date][]): number {
-  if (ranges.length === 0) return 0;
-  const sorted = [...ranges].sort((a, b) => a[0].getTime() - b[0].getTime());
-  const merged: [Date, Date][] = [[sorted[0][0], sorted[0][1]]];
-  for (let i = 1; i < sorted.length; i++) {
-    const last = merged[merged.length - 1];
-    const cur = sorted[i];
-    // adjacent or overlapping
-    if (cur[0].getTime() <= last[1].getTime() + 24 * 60 * 60 * 1000) {
-      if (cur[1] > last[1]) last[1] = cur[1];
-    } else {
-      merged.push([cur[0], cur[1]]);
-    }
+// Standard full-time thresholds (Australian NES / WHV official guidance)
+const STANDARD_HOURS_PER_DAY = 7.6;   // 38h full-time week ÷ 5 days
+const FULL_TIME_HOURS_PER_WEEK = 35;  // threshold for counting full pay period
+
+function parseHours(hoursStr: string | null): number | null {
+  if (!hoursStr) return null;
+  // Handle "HH:MM" time notation
+  const timeMatch = hoursStr.match(/^(\d+):(\d{2})$/);
+  if (timeMatch) return parseInt(timeMatch[1]) + parseInt(timeMatch[2]) / 60;
+  // Handle numeric with optional unit: "39.00", "39h", "39 hours"
+  const numMatch = hoursStr.match(/(\d+\.?\d*)/);
+  if (numMatch) {
+    const n = parseFloat(numMatch[1]);
+    return isNaN(n) || n < 0 ? null : n;
   }
-  return merged.reduce((s, [a, b]) => s + calendarDaysInclusive(a, b), 0);
+  return null;
 }
 
-// ─── Day calculation (official WHV rule: calendar days, no hours minimum) ────
+type PayslipDaysResult = {
+  days: number;
+  periodDays: number;
+  hoursWorked: number | null;
+  avgHoursPerWeek: number | null;
+  isFullTime: boolean;
+  isFallback: boolean;
+};
+
+function calcPayslipDays(p: PayslipRecord): PayslipDaysResult | null {
+  const start = parseDDMMYYYY(p.payPeriodStart);
+  const end = parseDDMMYYYY(p.payPeriodEnd);
+  if (!start || !end || end < start) return null;
+  const periodDays = calendarDaysInclusive(start, end);
+  const hours = parseHours(p.hoursWorked);
+  if (hours !== null && periodDays > 0) {
+    const avgHoursPerWeek = hours / (periodDays / 7);
+    if (avgHoursPerWeek >= FULL_TIME_HOURS_PER_WEEK) {
+      return { days: periodDays, periodDays, hoursWorked: hours, avgHoursPerWeek, isFullTime: true, isFallback: false };
+    }
+    // Part-time: count equivalent full-time days, capped at period length
+    const equivalentDays = Math.max(0, Math.min(Math.round(hours / STANDARD_HOURS_PER_DAY), periodDays));
+    return { days: equivalentDays, periodDays, hoursWorked: hours, avgHoursPerWeek, isFullTime: false, isFallback: false };
+  }
+  // No hours data — fall back to calendar days (conservative, same as before)
+  return { days: periodDays, periodDays, hoursWorked: null, avgHoursPerWeek: null, isFullTime: true, isFallback: true };
+}
+
+// ─── Day calculation (WHV official rule: actual work days based on hours worked) ─
 
 type DaysResult = { days: number; note: string; isEstimate: boolean };
 
@@ -76,21 +105,27 @@ function calculateQualifyingDays(employer: EmployerData, isFrench: boolean): Day
     return { days: 0, note: "", isEstimate: false };
   }
 
-  // Method 1: per-payslip pay-period date ranges (most accurate)
+  // Method 1: per-payslip hours-based calculation
+  // Rule: count actual working days (hours worked ÷ 7.6), not elapsed pay period length.
+  // If avg hours/week ≥ 35h → full period counts. Otherwise → equivalent days only.
   const payslips = employer.payslips ?? [];
-  const ranges: [Date, Date][] = [];
-  for (const p of payslips) {
-    const s = parseDDMMYYYY(p.payPeriodStart);
-    const e = parseDDMMYYYY(p.payPeriodEnd);
-    if (s && e && e >= s) ranges.push([s, e]);
-  }
-  if (ranges.length > 0) {
-    const days = sumMergedRanges(ranges);
-    const n = payslips.length;
-    const note = isFrench
-      ? `${n} fiche${n > 1 ? "s" : ""} de paie · ${employer.startDate ?? "?"} → ${employer.endDate ?? "?"}`
-      : `${n} payslip${n > 1 ? "s" : ""} · ${employer.startDate ?? "?"} → ${employer.endDate ?? "?"}`;
-    return { days, note, isEstimate: false };
+  if (payslips.length > 0) {
+    let totalDays = 0;
+    let hasAnyPeriodData = false;
+    for (const p of payslips) {
+      const result = calcPayslipDays(p);
+      if (result) {
+        totalDays += result.days;
+        hasAnyPeriodData = true;
+      }
+    }
+    if (hasAnyPeriodData) {
+      const n = payslips.length;
+      const note = isFrench
+        ? `${n} fiche${n > 1 ? "s" : ""} de paie · ${employer.startDate ?? "?"} → ${employer.endDate ?? "?"}`
+        : `${n} payslip${n > 1 ? "s" : ""} · ${employer.startDate ?? "?"} → ${employer.endDate ?? "?"}`;
+      return { days: totalDays, note, isEstimate: false };
+    }
   }
 
   // Method 2: employer start → end date
@@ -313,6 +348,7 @@ function PayslipCard({
   const start = parseDDMMYYYY(payslip.payPeriodStart);
   const end = parseDDMMYYYY(payslip.payPeriodEnd);
   const periodDays = start && end && end >= start ? calendarDaysInclusive(start, end) : null;
+  const payslipResult = calcPayslipDays(payslip);
 
   return (
     <div className="border border-gray-100 rounded-xl overflow-hidden mb-3">
@@ -331,11 +367,15 @@ function PayslipCard({
             {payslip.payPeriodStart && payslip.payPeriodEnd && (
               <p className="text-xs text-gray-500">
                 {payslip.payPeriodStart} → {payslip.payPeriodEnd}
-                {periodDays !== null && (
-                  <span className={`ml-2 font-semibold ${employerQualifies === true ? "text-green-700" : "text-gray-500"}`}>
-                    ({periodDays} {isFrench ? "jours" : "days"}{employerQualifies === true ? " ✅" : ""})
+                {employerQualifies === true && payslipResult !== null ? (
+                  <span className={`ml-2 font-semibold ${payslipResult.days > 0 ? "text-green-700" : "text-gray-400"}`}>
+                    ({payslipResult.days} {isFrench ? "j. validés" : "d. validated"}{payslipResult.days > 0 ? " ✅" : ""})
                   </span>
-                )}
+                ) : periodDays !== null ? (
+                  <span className="ml-2 font-semibold text-gray-500">
+                    ({periodDays} {isFrench ? "jours" : "days"})
+                  </span>
+                ) : null}
               </p>
             )}
           </div>
@@ -381,6 +421,36 @@ function PayslipCard({
                 </button>
               </div>
             ) : null
+          )}
+
+          {/* Validated days summary — only for qualifying employers */}
+          {employerQualifies === true && payslipResult !== null && (
+            <div className="px-4 py-2.5 bg-gray-50 border-t border-gray-100 flex items-start gap-2">
+              <span className="text-sm flex-shrink-0 mt-px">
+                {payslipResult.isFallback ? "ℹ️" : payslipResult.isFullTime ? "✅" : "⚠️"}
+              </span>
+              <p className="text-xs leading-snug">
+                {payslipResult.isFallback ? (
+                  <span className="text-gray-500">
+                    {isFrench
+                      ? `Heures non disponibles — ${payslipResult.periodDays} jours comptés (période complète)`
+                      : `Hours not available — ${payslipResult.periodDays} days counted (full period)`}
+                  </span>
+                ) : payslipResult.isFullTime ? (
+                  <span className="text-green-700 font-semibold">
+                    {isFrench
+                      ? `Plein temps (${payslipResult.avgHoursPerWeek!.toFixed(1)} h/sem) — ${payslipResult.days} jour${payslipResult.days !== 1 ? "s" : ""} validé${payslipResult.days !== 1 ? "s" : ""}`
+                      : `Full time (${payslipResult.avgHoursPerWeek!.toFixed(1)} h/week) — ${payslipResult.days} validated day${payslipResult.days !== 1 ? "s" : ""}`}
+                  </span>
+                ) : (
+                  <span className="text-amber-700 font-semibold">
+                    {isFrench
+                      ? `Temps partiel (${payslipResult.avgHoursPerWeek!.toFixed(1)} h/sem) — ${payslipResult.days} jour${payslipResult.days !== 1 ? "s" : ""} validé${payslipResult.days !== 1 ? "s" : ""} sur ${payslipResult.periodDays} jours de période`
+                      : `Part time (${payslipResult.avgHoursPerWeek!.toFixed(1)} h/week) — ${payslipResult.days} day${payslipResult.days !== 1 ? "s" : ""} validated out of ${payslipResult.periodDays}-day period`}
+                  </span>
+                )}
+              </p>
+            </div>
           )}
         </div>
       )}
